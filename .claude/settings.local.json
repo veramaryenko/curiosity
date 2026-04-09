@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(command -v nvm)",
+      "Read(//Users/veramaryenko/.nvm/**)",
+      "Bash(brew list:*)",
+      "Bash(brew upgrade:*)",
+      "Bash(export PATH=\"/opt/homebrew/opt/node@22/bin:$PATH\")",
+      "Bash(npm --version)",
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest init -d)"
+    ]
+  }
+}
