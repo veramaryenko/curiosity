@@ -1,5 +1,5 @@
 import Groq from "groq-sdk";
-import type { InterestSuggestion } from "@/types";
+import type { InterestSuggestion, DiscoveryPlanResult } from "@/types";
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
@@ -105,6 +105,155 @@ Odpowiedz TYLKO jako JSON array, bez żadnego innego tekstu:
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error("AI did not return valid JSON");
   return JSON.parse(jsonMatch[0]);
+}
+
+/**
+ * Sanitize a resource URL from the LLM: only allow YouTube search and Google search
+ * URLs. LLMs hallucinate specific video/article URLs, but search URLs always work
+ * because they are deterministic query strings.
+ */
+function sanitizeResourceUrl(url: unknown): string | null {
+  if (typeof url !== "string" || url.length === 0) return null;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    if (host === "youtube.com" && parsed.pathname === "/results") {
+      return parsed.toString();
+    }
+    if (host === "google.com" && parsed.pathname === "/search") {
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generates a full day-by-day plan directly from the user's free-text goal.
+ * Unlike the onboarding flow (which first picks from 4-5 interest ideas), this
+ * function skips the "ideas" step and produces the concrete plan in one call.
+ *
+ * The returned plan has, for every day:
+ *   - a specific action + "why" in 1-2 sentences
+ *   - a measurable metric (e.g. "200 słów", "2 km", "15 minut")
+ *   - an optional resource_url restricted to YouTube/Google search links
+ */
+export async function generateDiscoveryPlan(
+  title: string,
+  description: string,
+  durationDays: number
+): Promise<DiscoveryPlanResult> {
+  const warmupEnd = Math.min(3, Math.max(1, Math.floor(durationDays * 0.2)));
+  const buildEnd = Math.max(warmupEnd + 1, Math.floor(durationDays * 0.6));
+
+  const prompt = `Jesteś ekspertem projektującym mikro-kursy w aplikacji Curiosity, która pomaga ludziom bez presji spróbować nowych rzeczy.
+
+CEL UŻYTKOWNIKA: "${title}"
+${description ? `OPIS: "${description}"` : ""}
+DŁUGOŚĆ: ${durationDays} dni
+
+=== KROK 1: WYKRYJ KATEGORIĘ ===
+Najpierw rozpoznaj typ celu i dopasuj metryki:
+- pisanie / kreatywne → słowa lub znaki (np. "200 słów")
+- sport / ruch → kilometry, minuty, powtórzenia (np. "2 km", "10 pompek")
+- nauka języka → nowe słowa, zdania, minuty czytania (np. "10 nowych słów")
+- rysowanie / sztuka → liczba szkiców lub minuty (np. "3 szkice", "20 minut")
+- muzyka → minuty gry, akordy, utwory (np. "15 minut gry", "2 akordy")
+- programowanie / techniczne → ćwiczenia, linie kodu, tutoriale (np. "1 tutorial", "30 linii kodu")
+- medytacja / mindfulness → minuty praktyki (np. "10 minut")
+- gotowanie → przepisy, techniki (np. "1 przepis", "2 techniki")
+- czytanie → strony, rozdziały (np. "20 stron")
+- inne → zaproponuj sensowną mierzalną metrykę
+
+Zapisz kategorię jednym krótkim stringiem po polsku (np. "Pisanie kreatywne", "Bieganie", "Nauka języka").
+
+=== KROK 2: STRUKTURA PROGRESJI ===
+- Dzień 1 do ${warmupEnd}: ROZGRZEWKA — bardzo łatwo, mała metryka, żeby user poczuł sukces
+- Dzień ${warmupEnd + 1} do ${buildEnd}: BUDOWA NAWYKU — metryka rośnie ~30-50%
+- Dzień ${buildEnd + 1} do ${durationDays}: WYZWANIE — większe porcje, własny projekt, zastosowanie
+Każde zadanie ma zająć max 15-30 minut realnej pracy.
+
+=== KROK 3: WYMAGANIA PER DZIEŃ ===
+Każdy dzień MUSI mieć trzy pola:
+
+1) description — konkretna akcja po polsku, 1-2 zdania, zawsze z krótkim "dlaczego":
+   DOBRZE: "Napisz 200 słów o głównym bohaterze — jego wygląd, charakter, największe marzenie. To fundament, bez niego fabuła się nie zadziała."
+   ŹLE: "Pomyśl o postaciach"
+   ŹLE: "Spróbuj coś napisać"
+
+2) metric — krótki, mierzalny cel (string, MAKSYMALNIE 5 słów):
+   DOBRZE: "200 słów", "15 minut", "3 szkice", "2 km", "10 nowych słów"
+   ŹLE: "trochę", "chwilkę", "kilka rzeczy", null
+   Metryki MUSZĄ rosnąć między rozgrzewką, budową nawyku i wyzwaniem.
+
+3) resource_url — link, TYLKO jeden z tych dwóch formatów, albo null:
+   - https://www.youtube.com/results?search_query=SŁOWA+PO+POLSKU
+   - https://www.google.com/search?q=SŁOWA+PO+POLSKU
+
+   ⚠️ ABSOLUTNIE ZAKAZANE są inne linki. W szczególności:
+   - ZAKAZ linków typu https://www.youtube.com/watch?v=XXXX
+   - ZAKAZ linków do konkretnych artykułów, kursów, stron (medium.com, blogi, itd.)
+   - ZAKAZ linków bez parametru search_query lub q
+   Linki do konkretnych treści SĄ ZAWSZE ZMYŚLONE i nie działają. User klika i trafia w pustkę.
+   Linki search zawsze działają, bo YouTube/Google same znajdą aktualne wyniki.
+
+   Preferuj YouTube search dla dni praktycznych ("jak zrobić X"), Google search dla teoretycznych.
+   Nie każdy dzień potrzebuje linku — dawaj resource_url tylko gdy user naprawdę potrzebuje zasobu (max 60% dni ma link, reszta to null).
+
+=== ODPOWIEDŹ ===
+Odpowiedz TYLKO jako JSON (bez markdown, bez wstępu):
+{
+  "category": "...",
+  "tasks": [
+    {"day": 1, "description": "...", "metric": "...", "resource_url": "https://www.youtube.com/results?search_query=..." },
+    {"day": 2, "description": "...", "metric": "...", "resource_url": null},
+    ...
+  ]
+}`;
+
+  const text = await chat(prompt, 4096);
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("AI did not return valid JSON");
+
+  const parsed = JSON.parse(jsonMatch[0]) as {
+    category?: unknown;
+    tasks?: unknown;
+  };
+
+  if (!Array.isArray(parsed.tasks)) {
+    throw new Error("AI response has no tasks array");
+  }
+
+  const tasks = parsed.tasks
+    .map((raw: unknown) => {
+      const t = raw as Record<string, unknown>;
+      const day = typeof t.day === "number" ? t.day : Number(t.day);
+      const description =
+        typeof t.description === "string" ? t.description.trim() : "";
+      const metric =
+        typeof t.metric === "string" && t.metric.trim().length > 0
+          ? t.metric.trim()
+          : null;
+      const resource_url = sanitizeResourceUrl(t.resource_url);
+
+      if (!Number.isFinite(day) || day < 1 || !description) return null;
+      return { day, description, metric, resource_url };
+    })
+    .filter((t): t is NonNullable<typeof t> => t !== null)
+    .sort((a, b) => a.day - b.day);
+
+  if (tasks.length === 0) {
+    throw new Error("AI returned no valid tasks");
+  }
+
+  const category =
+    typeof parsed.category === "string" && parsed.category.trim().length > 0
+      ? parsed.category.trim()
+      : "Nowy skill";
+
+  return { category, tasks };
 }
 
 export async function generateReflectionInsight(

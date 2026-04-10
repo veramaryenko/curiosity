@@ -21,6 +21,7 @@ create table public.daily_tasks (
   day_number integer not null,
   description text not null,
   resource_url text,
+  metric text,
   completed boolean default false not null,
   date date not null
 );

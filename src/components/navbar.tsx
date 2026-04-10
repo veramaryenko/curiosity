@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -20,6 +21,13 @@ export function Navbar() {
           Curiosity
         </Link>
         <nav className="flex items-center gap-1">
+          <Link
+            href="/challenge/discover"
+            className="mr-1 flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Nowa przygoda
+          </Link>
           {navItems.map((item) => (
             <Link
               key={item.href}

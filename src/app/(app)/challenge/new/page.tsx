@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,6 +37,7 @@ export default function NewChallengePage() {
   const [planMode, setPlanMode] = useState<PlanMode>(null);
   const [tasks, setTasks] = useState<TaskDraft[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   function initEmptyTasks(numDays: number) {
     return Array.from({ length: numDays }, (_, i) => ({
@@ -47,17 +49,26 @@ export default function NewChallengePage() {
 
   async function generateWithAI() {
     setGenerating(true);
-    // TODO: Call AI API to generate plan
-    // For now, generate placeholder tasks
-    await new Promise((r) => setTimeout(r, 1500));
-    const generated = Array.from({ length: days }, (_, i) => ({
-      day: i + 1,
-      description: `Dzień ${i + 1}: Zadanie wygenerowane przez AI na podstawie celu "${title}"`,
-      resource_url: "",
-    }));
-    setTasks(generated);
-    setGenerating(false);
-    setStep("review");
+    try {
+      const res = await fetch("/api/ai/generate-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description, duration_days: days }),
+      });
+      if (!res.ok) throw new Error();
+      const { tasks: generated } = await res.json();
+      setTasks(
+        generated.map((t: { day: number; description: string; resource_url: string | null }) => ({
+          ...t,
+          resource_url: t.resource_url ?? "",
+        }))
+      );
+      setStep("review");
+    } catch {
+      toast.error("Nie udało się wygenerować planu. Spróbuj ponownie.");
+    } finally {
+      setGenerating(false);
+    }
   }
 
   function startManual() {
@@ -75,17 +86,53 @@ export default function NewChallengePage() {
   }
 
   async function createChallenge() {
-    // TODO: Save to Supabase
-    console.log("Create challenge", { title, description, days, tasks });
-    router.push("/dashboard");
+    setSaving(true);
+    try {
+      const res = await fetch("/api/challenges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description,
+          duration_days: days,
+          tasks: tasks.map((t) => ({
+            day: t.day,
+            description: t.description,
+            resource_url: t.resource_url || null,
+          })),
+        }),
+      });
+      if (!res.ok) throw new Error();
+      router.push("/dashboard");
+    } catch {
+      toast.error("Nie udało się zapisać wyzwania. Spróbuj ponownie.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function askAIToReview() {
     setGenerating(true);
-    // TODO: Call AI to review/improve user's plan
-    await new Promise((r) => setTimeout(r, 1500));
-    // For now just simulate
-    setGenerating(false);
+    try {
+      const res = await fetch("/api/ai/review-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, tasks }),
+      });
+      if (!res.ok) throw new Error();
+      const { tasks: reviewed } = await res.json();
+      setTasks(
+        reviewed.map((t: { day: number; description: string; resource_url: string | null }) => ({
+          ...t,
+          resource_url: t.resource_url ?? "",
+        }))
+      );
+      toast.success("AI poprawiło Twój plan!");
+    } catch {
+      toast.error("Nie udało się sprawdzić planu. Spróbuj ponownie.");
+    } finally {
+      setGenerating(false);
+    }
   }
 
   return (
@@ -264,10 +311,10 @@ export default function NewChallengePage() {
             </Button>
             <Button
               onClick={createChallenge}
-              disabled={tasks.some((t) => !t.description.trim())}
+              disabled={saving || tasks.some((t) => !t.description.trim())}
               className="flex-1"
             >
-              Rozpocznij wyzwanie!
+              {saving ? "Zapisywanie..." : "Rozpocznij wyzwanie!"}
             </Button>
           </div>
         </div>
