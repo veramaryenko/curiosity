@@ -8,7 +8,27 @@
       "Bash(export PATH=\"/opt/homebrew/opt/node@22/bin:$PATH\")",
       "Bash(npm --version)",
       "Bash(npm install:*)",
-      "Bash(npx shadcn@latest init -d)"
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(npx shadcn@latest add card input textarea label checkbox dialog dropdown-menu avatar badge separator tabs progress toast -y)",
+      "Bash(npx shadcn@latest add card input textarea label checkbox dialog dropdown-menu avatar badge separator tabs progress sonner -y)",
+      "Bash(npx next:*)",
+      "Bash(rm -rf dashboard challenge history settings)",
+      "Bash(mkdir -p '\\(app\\)/dashboard' '\\(app\\)/challenge/new' '\\(app\\)/challenge/[id]' '\\(app\\)/challenge/[id]/summary' '\\(app\\)/history' '\\(app\\)/settings')",
+      "Bash(git config:*)",
+      "Bash(gh api:*)",
+      "Bash(git remote:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh auth:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(git rebase:*)",
+      "WebSearch",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(bw --version)"
     ]
   }
 }

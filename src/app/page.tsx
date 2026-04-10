@@ -18,17 +18,17 @@ export default function LandingPage() {
       <main className="flex flex-1 flex-col items-center justify-center px-4 text-center">
         <div className="mx-auto max-w-lg space-y-6">
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-            Odkryj, co naprawdę
-            <span className="text-primary"> lubisz</span>
+            Zbuduj zdrową relację
+            <span className="text-primary"> ze sobą</span>
           </h1>
           <p className="text-lg leading-relaxed text-muted-foreground">
-            Krótkie wyzwania na 7-14 dni, które pomagają Ci spróbować nowych
-            rzeczy. Bez presji, bez oceniania. W swoim tempie.
+            Krótkie wyzwania, które pomagają Ci odkryć kim jesteś i co
+            naprawdę lubisz. Bez presji, bez oceniania. W swoim tempie.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link href="/auth/login">
               <Button size="lg" className="w-full sm:w-auto">
-                Zacznij za darmo
+                Zacznij odkrywanie
               </Button>
             </Link>
           </div>
@@ -40,10 +40,10 @@ export default function LandingPage() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-xl">
               1
             </div>
-            <h3 className="font-semibold">Wybierz cel</h3>
+            <h3 className="font-semibold">Wybierz co Cię ciekawi</h3>
             <p className="text-sm text-muted-foreground">
-              Napisz co chcesz spróbować. AI pomoże Ci stworzyć plan — albo
-              zrób to sam.
+              Rysowanie? Medytacja? Bieganie? Napisz co chcesz spróbować —
+              pomożemy Ci zacząć.
             </p>
           </div>
           <div className="space-y-2">
@@ -60,10 +60,10 @@ export default function LandingPage() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-xl">
               3
             </div>
-            <h3 className="font-semibold">Podsumuj i zdecyduj</h3>
+            <h3 className="font-semibold">Poznaj siebie lepiej</h3>
             <p className="text-sm text-muted-foreground">
-              Na koniec opisz swoje odczucia. Kontynuujesz? Próbujesz czegoś
-              nowego? Twój wybór.
+              Na koniec zobacz co odkryłeś/aś o sobie. Co Ci pasuje? Co nie?
+              Każde doświadczenie to krok do przodu.
             </p>
           </div>
         </div>
@@ -71,7 +71,7 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="py-8 text-center text-sm text-muted-foreground">
-        Curiosity — odkrywaj siebie w swoim tempie
+        Curiosity — Twoja przestrzeń na odkrywanie siebie
       </footer>
     </div>
   );

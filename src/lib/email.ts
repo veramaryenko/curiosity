@@ -39,7 +39,7 @@ export async function sendDailyReminder({
 
         <hr style="border: none; border-top: 1px solid #e7e5e4; margin: 24px 0;" />
         <p style="color: #a8a29e; font-size: 12px;">
-          Curiosity — odkrywaj siebie w swoim tempie
+          Curiosity — Twoja przestrzeń na odkrywanie siebie
         </p>
       </div>
     `,

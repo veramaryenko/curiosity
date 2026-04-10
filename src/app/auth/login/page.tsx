@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,16 +18,27 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setError(null);
 
-    // TODO: Supabase magic link
-    // const { error } = await supabase.auth.signInWithOtp({ email });
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
 
-    // Simulate for now
-    await new Promise((r) => setTimeout(r, 1000));
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+      return;
+    }
+
     setSent(true);
     setLoading(false);
   }
@@ -74,6 +86,9 @@ export default function LoginPage() {
                   autoFocus
                 />
               </div>
+              {error && (
+                <p className="text-sm text-destructive">{error}</p>
+              )}
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Wysyłam..." : "Wyślij link"}
               </Button>

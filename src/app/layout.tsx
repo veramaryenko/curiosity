@@ -9,9 +9,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Curiosity — odkryj siebie",
+  title: "Curiosity — zbuduj zdrową relację ze sobą",
   description:
-    "Krótkie wyzwania, które pomagają odkryć co naprawdę lubisz. Bez presji, w swoim tempie.",
+    "Odkrywaj siebie przez krótkie wyzwania. Bez presji, bez oceniania, w swoim tempie.",
 };
 
 export const viewport: Viewport = {

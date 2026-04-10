@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,12 +23,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/client";
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [reminderTime, setReminderTime] = useState("09:00");
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function savePreferences() {
     setSaving(true);
@@ -37,15 +42,33 @@ export default function SettingsPage() {
   }
 
   async function deleteAccount() {
-    // TODO: Delete all user data from Supabase (cascade)
-    // TODO: Sign out
-    console.log("Delete account");
-    setDeleteDialogOpen(false);
+    setDeleting(true);
+
+    try {
+      const res = await fetch("/api/account", { method: "DELETE" });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Nieznany błąd");
+      }
+
+      // Sign out after successful deletion, then redirect to goodbye screen
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.push("/auth/goodbye");
+    } catch (err) {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+      toast.error(
+        err instanceof Error ? err.message : "Nie udało się usunąć konta. Spróbuj ponownie."
+      );
+    }
   }
 
   async function signOut() {
-    // TODO: Supabase sign out
-    console.log("Sign out");
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/auth/login");
   }
 
   return (
@@ -101,7 +124,12 @@ export default function SettingsPage() {
             Wyloguj się
           </Button>
 
-          <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <Dialog
+            open={deleteDialogOpen}
+            onOpenChange={(open) => {
+              if (!deleting) setDeleteDialogOpen(open);
+            }}
+          >
             <DialogTrigger
               className="inline-flex w-full items-center justify-center rounded-md bg-destructive px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-destructive/90"
             >
@@ -115,15 +143,20 @@ export default function SettingsPage() {
                   wpisy o nastroju. Tej operacji nie da się cofnąć.
                 </DialogDescription>
               </DialogHeader>
-              <DialogFooter className="flex gap-2 sm:gap-0">
+<DialogFooter className="flex gap-2 sm:gap-0">
                 <Button
                   variant="ghost"
                   onClick={() => setDeleteDialogOpen(false)}
+                  disabled={deleting}
                 >
                   Anuluj
                 </Button>
-                <Button variant="destructive" onClick={deleteAccount}>
-                  Tak, usuń konto
+                <Button
+                  variant="destructive"
+                  onClick={deleteAccount}
+                  disabled={deleting}
+                >
+                  {deleting ? "Usuwam…" : "Tak, usuń konto"}
                 </Button>
               </DialogFooter>
             </DialogContent>

@@ -47,6 +47,13 @@ export interface Reflection {
   created_at: string;
 }
 
+export interface InterestSuggestion {
+  title: string;
+  description: string;
+  emoji: string;
+  estimated_minutes: number;
+}
+
 export interface NotificationPreferences {
   id: string;
   user_id: string;
