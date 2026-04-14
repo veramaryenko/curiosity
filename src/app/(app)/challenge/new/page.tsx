@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -100,6 +101,14 @@ export default function NewChallengePage() {
   }
 
   async function createChallenge() {
+    if (tasks.some((t) => !t.description.trim())) {
+      const msg =
+        "Uzupełnij opis każdego dnia zanim zapiszesz wyzwanie.";
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -119,11 +128,19 @@ export default function NewChallengePage() {
         }),
       });
 
-      if (!res.ok) throw new Error("save");
+      if (!res.ok) {
+        const body = await res.text();
+        console.error("Save challenge failed", res.status, body);
+        throw new Error(`save ${res.status}`);
+      }
 
       router.push("/dashboard");
-    } catch {
-      setError("Nie udało się zapisać wyzwania. Spróbuj ponownie.");
+      router.refresh();
+    } catch (e) {
+      console.error(e);
+      const msg = "Nie udało się zapisać wyzwania. Spróbuj ponownie.";
+      setError(msg);
+      toast.error(msg);
       setSaving(false);
     }
   }
@@ -360,14 +377,17 @@ export default function NewChallengePage() {
             </Button>
             <Button
               onClick={createChallenge}
-              disabled={
-                saving || tasks.some((t) => !t.description.trim())
-              }
+              disabled={saving}
               className="flex-1"
             >
               {saving ? "Zapisuję..." : "Rozpocznij wyzwanie!"}
             </Button>
           </div>
+          {tasks.some((t) => !t.description.trim()) && (
+            <p className="text-center text-xs text-muted-foreground">
+              Uzupełnij opis każdego dnia, żeby zapisać wyzwanie.
+            </p>
+          )}
         </div>
       )}
     </div>
