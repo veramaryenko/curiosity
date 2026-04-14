@@ -142,7 +142,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={loading || code.length !== 6}
+                disabled={loading || code.length < 6}
               >
                 {loading ? "Sprawdzam..." : "Zaloguj się"}
               </Button>
