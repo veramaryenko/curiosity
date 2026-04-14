@@ -49,10 +49,11 @@ ZASADY (rygorystycznie):
 
 4. SAMOWYSTARCZALNOŚĆ. Opis zadania ma być pełną instrukcją. Po przeczytaniu użytkownik wie dokładnie: co, jak, ile razy, jak długo. Żadnego "zobacz jakieś źródło i wymyśl".
 
-5. BEZPIECZEŃSTWO dla tematów zdrowotnych, regeneracyjnych, sportowych lub związanych z bólem/kontuzją:
+5. BEZPIECZEŃSTWO — stosuj TYLKO jeśli temat wyzwania wprost dotyczy bólu, kontuzji, rehabilitacji, regeneracji po urazie lub stanu medycznego (np. "ból pleców", "kontuzja kolana", "rehabilitacja barku"). NIE stosuj tej zasady dla zwykłych tematów sportowych, fitness, jogi, nauki języka, hobby, kreatywności, produktywności itp. — tam żadne ostrzeżenia o bólu nie są potrzebne i są wręcz szkodliwe, bo wprowadzają niepokój bez powodu.
+   Jeśli (i tylko jeśli) temat faktycznie dotyczy bólu/kontuzji/rehabilitacji:
    - W pierwszym zadaniu dnia 1 dodaj zdanie: "Uwaga: jeśli ból się nasila lub pojawiają się niepokojące objawy, przerwij i skonsultuj się z lekarzem lub fizjoterapeutą. Ten plan nie zastępuje porady specjalisty."
-   - Używaj delikatnych, powszechnie bezpiecznych wersji ćwiczeń (unikaj obciążeń, skrajnych zakresów, ryzykownych technik)
-   - Przy bólu pleców, kontuzjach, regeneracji: zaczynaj od pozycji leżącej, oddechu, delikatnej mobilności — nie od "wzmacniania"
+   - Używaj delikatnych, bezpiecznych wersji ćwiczeń; zaczynaj od pozycji leżącej, oddechu, delikatnej mobilności — nie od "wzmacniania".
+   We wszystkich pozostałych przypadkach NIE wspominaj o bólu, lekarzu, fizjoterapeucie ani specjalistach.
 
 6. CZAS. Każde zadanie realnie 10-30 minut. Oznacz czas w opisie tam gdzie to ma sens.
 
@@ -90,7 +91,7 @@ ZASADY ulepszania:
 
 4. Sprawdź progresję — pierwsze dni łatwe, potem trudniej. Jeśli trzeba, popraw kolejność lub trudność.
 
-5. Dla tematów zdrowotnych/sportowych/regeneracyjnych: zadbaj o bezpieczeństwo. W zadaniu dnia 1 dodaj: "Uwaga: jeśli ból się nasila lub pojawiają się niepokojące objawy, przerwij i skonsultuj się ze specjalistą." Preferuj delikatne, bezpieczne techniki.
+5. BEZPIECZEŃSTWO — tylko jeśli temat wyzwania wprost dotyczy bólu, kontuzji, rehabilitacji lub stanu medycznego (np. "ból pleców", "kontuzja"), w zadaniu dnia 1 dodaj: "Uwaga: jeśli ból się nasila lub pojawiają się niepokojące objawy, przerwij i skonsultuj się ze specjalistą." i preferuj delikatne techniki. NIE dodawaj takich ostrzeżeń dla zwykłych tematów sportowych, fitness, jogi, nauki, hobby itp. — byłyby bez sensu.
 
 6. Resource_url dodawaj tylko dla stabilnych, znanych źródeł. W razie wątpliwości null.
 
