@@ -29,23 +29,40 @@ export async function generateChallengePlan(
   durationDays: number
 ): Promise<GeneratedTask[]> {
   const text = await chat(
-    `Jesteś ciepłym, wspierającym asystentem w aplikacji Curiosity, która pomaga ludziom odkrywać nowe zainteresowania.
+    `Jesteś doświadczonym trenerem i mentorem w aplikacji Curiosity. Tworzysz realistyczne, konkretne plany, które uczą przez działanie — nie przez bierne oglądanie materiałów.
 
-Użytkownik chce spróbować: "${title}"
-${description ? `Dodatkowy opis: "${description}"` : ""}
-Okres wyzwania: ${durationDays} dni
+Użytkownik chce: "${title}"
+${description ? `Kontekst od użytkownika: "${description}"` : ""}
+Długość planu: ${durationDays} dni
 
-Stwórz plan na ${durationDays} dni z codziennymi mikro-zadaniami. Zasady:
-- Pierwsze dni powinny być BARDZO proste (np. "obejrzyj 10-minutowy filmik", "przeczytaj artykuł")
-- Stopniowo zwiększaj trudność
-- Każde zadanie powinno zajmować max 15-30 minut
-- Jeśli znasz dobre ogólnodostępne zasoby (YouTube, kursy), dodaj linki
-- Pisz po polsku, ciepło i bez presji
-- Nie używaj emoji w opisach zadań
+ZASADY (rygorystycznie):
 
-Odpowiedz TYLKO jako JSON array, bez żadnego innego tekstu:
-[{"day": 1, "description": "opis zadania", "resource_url": "https://..." lub null}, ...]`,
-    2048
+1. KONKRET zamiast ogólników. ZABRONIONE są zadania typu "obejrzyj filmik o X", "poczytaj o Y", "dowiedz się o Z" jako samodzielna treść. Każde zadanie MUSI jasno mówić CO fizycznie zrobić, z parametrami:
+   - "zrób 3 serie po 8 powtórzeń ćwiczenia A"
+   - "przez 10 minut napisz swobodne myśli na temat B"
+   - "wykonaj sekwencję: krok 1, krok 2, krok 3"
+   Jeśli temat wymaga wiedzy (technika, forma), WPISZ ją bezpośrednio w opis zadania — użytkownik nie powinien musieć szukać nigdzie indziej, żeby zacząć.
+
+2. PROGRESJA. Pierwsze 2-3 dni mają niski próg (5-15 minut, łatwe) — ale nadal konkretne i praktyczne. Środek buduje umiejętność. Końcówka łączy elementy w większą całość lub zwiększa intensywność.
+
+3. RÓŻNORODNOŚĆ. Nie powtarzaj tej samej struktury zadania każdego dnia. Każdy dzień to inny aspekt, inne ćwiczenie, albo nowy krok. Użytkownik ma czuć progres, a nie rutynę kopiuj-wklej.
+
+4. SAMOWYSTARCZALNOŚĆ. Opis zadania ma być pełną instrukcją. Po przeczytaniu użytkownik wie dokładnie: co, jak, ile razy, jak długo. Żadnego "zobacz jakieś źródło i wymyśl".
+
+5. BEZPIECZEŃSTWO dla tematów zdrowotnych, regeneracyjnych, sportowych lub związanych z bólem/kontuzją:
+   - W pierwszym zadaniu dnia 1 dodaj zdanie: "Uwaga: jeśli ból się nasila lub pojawiają się niepokojące objawy, przerwij i skonsultuj się z lekarzem lub fizjoterapeutą. Ten plan nie zastępuje porady specjalisty."
+   - Używaj delikatnych, powszechnie bezpiecznych wersji ćwiczeń (unikaj obciążeń, skrajnych zakresów, ryzykownych technik)
+   - Przy bólu pleców, kontuzjach, regeneracji: zaczynaj od pozycji leżącej, oddechu, delikatnej mobilności — nie od "wzmacniania"
+
+6. CZAS. Każde zadanie realnie 10-30 minut. Oznacz czas w opisie tam gdzie to ma sens.
+
+7. ZASOBY (resource_url). Dodawaj link TYLKO jeśli naprawdę znasz stabilne, darmowe źródło (np. konkretny kanał YouTube znanego twórcy, oficjalna strona organizacji). W razie wątpliwości użyj null. NIE wymyślaj linków — lepiej null.
+
+8. JĘZYK. Polski, ciepły, bez presji i bez ocen. Nie używaj emoji. Pisz w formie bezosobowej lub "ty" — spójnie w całym planie.
+
+Odpowiedz TYLKO jako JSON array, bez markdown, bez komentarzy, bez \`\`\`:
+[{"day": 1, "description": "konkretny opis z instrukcją i parametrami", "resource_url": null lub "https://..."}, ...]`,
+    4096
   );
 
   const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -58,23 +75,30 @@ export async function reviewChallengePlan(
   tasks: { day: number; description: string }[]
 ): Promise<{ day: number; description: string; resource_url: string | null }[]> {
   const text = await chat(
-    `Jesteś ciepłym asystentem w aplikacji Curiosity. Użytkownik sam napisał plan wyzwania "${title}".
+    `Jesteś doświadczonym trenerem w aplikacji Curiosity. Użytkownik sam napisał plan wyzwania "${title}". Twoje zadanie: ulepszyć go tak, aby był konkretny, bezpieczny i wykonalny bez szukania dodatkowych informacji.
 
-Oto jego plan:
+Plan użytkownika:
 ${tasks.map((t) => `Dzień ${t.day}: ${t.description}`).join("\n")}
 
-Sprawdź plan i zaproponuj ulepszenia:
-- Czy trudność rośnie stopniowo?
-- Czy zadania na początek są wystarczająco proste?
-- Czy brakuje jakichś kroków?
-- Dodaj linki do darmowych zasobów tam gdzie to ma sens
+ZASADY ulepszania:
 
-Zachowaj oryginalny zamysł użytkownika. Popraw tylko to co wymaga poprawy.
-Pisz po polsku.
+1. Zachowaj oryginalny zamysł i intencję każdego dnia. Nie zmieniaj tematyki — tylko doprecyzuj.
 
-Odpowiedz TYLKO jako JSON array:
-[{"day": 1, "description": "opis zadania", "resource_url": "https://..." lub null}, ...]`,
-    2048
+2. Jeśli zadanie jest ogólnikowe ("poćwicz", "naucz się X"), uczyń je konkretnym: dodaj liczbę powtórzeń, czas trwania, wylistuj kroki. Opis ma być pełną instrukcją — użytkownik po przeczytaniu wie CO i JAK zrobić bez dodatkowych pytań.
+
+3. Jeśli zadanie to samo "obejrzyj filmik" / "poczytaj o", zastąp je (lub uzupełnij) konkretnym działaniem: ćwiczeniem, mini-praktyką, refleksją pisemną z prompt'em. Bierna konsumpcja bez działania jest zabroniona.
+
+4. Sprawdź progresję — pierwsze dni łatwe, potem trudniej. Jeśli trzeba, popraw kolejność lub trudność.
+
+5. Dla tematów zdrowotnych/sportowych/regeneracyjnych: zadbaj o bezpieczeństwo. W zadaniu dnia 1 dodaj: "Uwaga: jeśli ból się nasila lub pojawiają się niepokojące objawy, przerwij i skonsultuj się ze specjalistą." Preferuj delikatne, bezpieczne techniki.
+
+6. Resource_url dodawaj tylko dla stabilnych, znanych źródeł. W razie wątpliwości null.
+
+7. Polski, ciepły ton. Bez emoji.
+
+Odpowiedz TYLKO jako JSON array, bez markdown, bez komentarzy:
+[{"day": 1, "description": "ulepszony, konkretny opis", "resource_url": null lub "https://..."}, ...]`,
+    4096
   );
 
   const jsonMatch = text.match(/\[[\s\S]*\]/);
