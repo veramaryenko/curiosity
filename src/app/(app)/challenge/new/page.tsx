@@ -36,6 +36,8 @@ export default function NewChallengePage() {
   const [planMode, setPlanMode] = useState<PlanMode>(null);
   const [tasks, setTasks] = useState<TaskDraft[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function initEmptyTasks(numDays: number) {
     return Array.from({ length: numDays }, (_, i) => ({
@@ -47,17 +49,40 @@ export default function NewChallengePage() {
 
   async function generateWithAI() {
     setGenerating(true);
-    // TODO: Call AI API to generate plan
-    // For now, generate placeholder tasks
-    await new Promise((r) => setTimeout(r, 1500));
-    const generated = Array.from({ length: days }, (_, i) => ({
-      day: i + 1,
-      description: `Dzień ${i + 1}: Zadanie wygenerowane przez AI na podstawie celu "${title}"`,
-      resource_url: "",
-    }));
-    setTasks(generated);
-    setGenerating(false);
-    setStep("review");
+    setError(null);
+
+    try {
+      const res = await fetch("/api/ai/generate-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description,
+          duration_days: days,
+        }),
+      });
+
+      if (!res.ok) throw new Error("generate");
+      const data = await res.json();
+
+      const generated: TaskDraft[] = data.tasks.map(
+        (t: { day: number; description: string; resource_url: string | null }) => ({
+          day: t.day,
+          description: t.description,
+          resource_url: t.resource_url ?? "",
+        })
+      );
+
+      setTasks(generated);
+      setStep("review");
+    } catch {
+      setError(
+        "Nie udało się wygenerować planu. Spróbuj ponownie albo napisz plan ręcznie."
+      );
+      setPlanMode(null);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   function startManual() {
@@ -75,17 +100,68 @@ export default function NewChallengePage() {
   }
 
   async function createChallenge() {
-    // TODO: Save to Supabase
-    console.log("Create challenge", { title, description, days, tasks });
-    router.push("/dashboard");
+    setSaving(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/challenges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description,
+          duration_days: days,
+          tasks: tasks.map((t) => ({
+            day: t.day,
+            description: t.description,
+            resource_url: t.resource_url.trim() || null,
+          })),
+        }),
+      });
+
+      if (!res.ok) throw new Error("save");
+
+      router.push("/dashboard");
+    } catch {
+      setError("Nie udało się zapisać wyzwania. Spróbuj ponownie.");
+      setSaving(false);
+    }
   }
 
   async function askAIToReview() {
     setGenerating(true);
-    // TODO: Call AI to review/improve user's plan
-    await new Promise((r) => setTimeout(r, 1500));
-    // For now just simulate
-    setGenerating(false);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/ai/review-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          tasks: tasks.map((t) => ({
+            day: t.day,
+            description: t.description,
+          })),
+        }),
+      });
+
+      if (!res.ok) throw new Error("review");
+      const data = await res.json();
+
+      const reviewed: TaskDraft[] = data.tasks.map(
+        (t: { day: number; description: string; resource_url: string | null }) => ({
+          day: t.day,
+          description: t.description,
+          resource_url: t.resource_url ?? "",
+        })
+      );
+
+      setTasks(reviewed);
+    } catch {
+      setError("Nie udało się sprawdzić planu. Spróbuj ponownie.");
+    } finally {
+      setGenerating(false);
+    }
   }
 
   return (
@@ -98,6 +174,12 @@ export default function NewChallengePage() {
           {step === "review" && "Twój plan — przejrzyj i dostosuj"}
         </p>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
       {/* Step 1: Goal */}
       {step === "goal" && (
@@ -162,8 +244,13 @@ export default function NewChallengePage() {
       {step === "plan" && (
         <div className="space-y-4">
           <Card
-            className="cursor-pointer transition-all hover:border-primary/50 hover:shadow-sm"
+            className={
+              generating
+                ? "opacity-50"
+                : "cursor-pointer transition-all hover:border-primary/50 hover:shadow-sm"
+            }
             onClick={() => {
+              if (generating) return;
               setPlanMode("ai");
               generateWithAI();
             }}
@@ -178,8 +265,15 @@ export default function NewChallengePage() {
           </Card>
 
           <Card
-            className="cursor-pointer transition-all hover:border-primary/50 hover:shadow-sm"
-            onClick={startManual}
+            className={
+              generating
+                ? "opacity-50"
+                : "cursor-pointer transition-all hover:border-primary/50 hover:shadow-sm"
+            }
+            onClick={() => {
+              if (generating) return;
+              startManual();
+            }}
           >
             <CardHeader>
               <CardTitle className="text-lg">Sam/sama napiszę plan</CardTitle>
@@ -193,6 +287,7 @@ export default function NewChallengePage() {
           <Button
             variant="ghost"
             onClick={() => setStep("goal")}
+            disabled={generating}
             className="w-full"
           >
             Wróć
@@ -216,7 +311,7 @@ export default function NewChallengePage() {
             <Button
               variant="outline"
               onClick={askAIToReview}
-              disabled={generating}
+              disabled={generating || tasks.some((t) => !t.description.trim())}
               className="w-full"
             >
               {generating ? "AI sprawdza..." : "Poproś AI o sprawdzenie planu"}
@@ -258,16 +353,19 @@ export default function NewChallengePage() {
             <Button
               variant="ghost"
               onClick={() => setStep("plan")}
+              disabled={saving}
               className="flex-1"
             >
               Wróć
             </Button>
             <Button
               onClick={createChallenge}
-              disabled={tasks.some((t) => !t.description.trim())}
+              disabled={
+                saving || tasks.some((t) => !t.description.trim())
+              }
               className="flex-1"
             >
-              Rozpocznij wyzwanie!
+              {saving ? "Zapisuję..." : "Rozpocznij wyzwanie!"}
             </Button>
           </div>
         </div>
