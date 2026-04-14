@@ -128,11 +128,11 @@ export default function LoginPage() {
                   inputMode="numeric"
                   pattern="[0-9]*"
                   autoComplete="one-time-code"
-                  maxLength={6}
-                  placeholder="123456"
+                  maxLength={10}
+                  placeholder="12345678"
                   value={code}
                   onChange={(e) =>
-                    setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    setCode(e.target.value.replace(/\D/g, "").slice(0, 10))
                   }
                   required
                   autoFocus
