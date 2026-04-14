@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -14,13 +15,17 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+type Step = "email" | "code";
+
 export default function LoginPage() {
+  const router = useRouter();
+  const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSendCode(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
@@ -39,8 +44,42 @@ export default function LoginPage() {
       return;
     }
 
-    setSent(true);
+    setStep("code");
     setLoading(false);
+  }
+
+  async function handleVerifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    const supabase = createClient();
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: "email",
+    });
+
+    if (verifyError) {
+      setError(verifyError.message);
+      setLoading(false);
+      return;
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      const { count } = await supabase
+        .from("challenges")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id);
+
+      router.push(count === 0 ? "/onboarding" : "/dashboard");
+    } else {
+      router.push("/dashboard");
+    }
   }
 
   return (
@@ -50,30 +89,18 @@ export default function LoginPage() {
           <Link href="/" className="mb-2 text-xl font-semibold text-primary">
             Curiosity
           </Link>
-          <CardTitle>{sent ? "Sprawdź pocztę" : "Zaloguj się"}</CardTitle>
+          <CardTitle>
+            {step === "email" ? "Zaloguj się" : "Wpisz kod"}
+          </CardTitle>
           <CardDescription>
-            {sent
-              ? `Wysłaliśmy link do ${email}`
-              : "Podaj email — wyślemy Ci link do logowania"}
+            {step === "email"
+              ? "Podaj email — wyślemy Ci kod logowania"
+              : `Wysłaliśmy 6-cyfrowy kod na ${email}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {sent ? (
-            <div className="space-y-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                Kliknij link w mailu, żeby się zalogować. Nie widzisz? Sprawdź
-                folder spam.
-              </p>
-              <Button
-                variant="ghost"
-                className="w-full"
-                onClick={() => setSent(false)}
-              >
-                Wyślij ponownie
-              </Button>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+          {step === "email" ? (
+            <form onSubmit={handleSendCode} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -86,11 +113,51 @@ export default function LoginPage() {
                   autoFocus
                 />
               </div>
-              {error && (
-                <p className="text-sm text-destructive">{error}</p>
-              )}
+              {error && <p className="text-sm text-destructive">{error}</p>}
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Wysyłam..." : "Wyślij link"}
+                {loading ? "Wysyłam..." : "Wyślij kod"}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyCode} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="code">Kod z maila</Label>
+                <Input
+                  id="code"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="123456"
+                  value={code}
+                  onChange={(e) =>
+                    setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  required
+                  autoFocus
+                />
+              </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || code.length !== 6}
+              >
+                {loading ? "Sprawdzam..." : "Zaloguj się"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setStep("email");
+                  setCode("");
+                  setError(null);
+                }}
+                disabled={loading}
+              >
+                Wróć i zmień email
               </Button>
             </form>
           )}
