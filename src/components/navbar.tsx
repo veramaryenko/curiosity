@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -34,6 +35,19 @@ export function Navbar() {
               {item.label}
             </Link>
           ))}
+          <Link
+            href="/challenge/new"
+            aria-label="Nowe wyzwanie"
+            className={cn(
+              "ml-1 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+              pathname.startsWith("/challenge/new")
+                ? "bg-primary text-primary-foreground"
+                : "bg-primary/10 text-primary hover:bg-primary/20"
+            )}
+          >
+            <Plus className="size-4" />
+            <span className="hidden sm:inline">Nowe</span>
+          </Link>
         </nav>
       </div>
     </header>
