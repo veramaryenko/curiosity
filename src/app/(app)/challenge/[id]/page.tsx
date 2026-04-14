@@ -23,6 +23,7 @@ const mockTasks = Array.from({ length: 14 }, (_, i) => ({
   day_number: i + 1,
   description: `Dzień ${i + 1}: Zadanie ${i + 1} dla wyzwania rysowania`,
   resource_url: i % 3 === 0 ? "https://example.com" : null,
+  metric: i < 5 ? "1 szkic" : i < 10 ? "2 szkice" : "3 szkice",
   completed: i < 4,
   date: `2026-04-${String(i + 1).padStart(2, "0")}`,
 }));
@@ -66,9 +67,16 @@ export default function ChallengeDetailPage() {
                 // TODO: Toggle in Supabase
               />
               <div className="flex-1 space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Dzień {task.day_number}
-                </p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Dzień {task.day_number}
+                  </p>
+                  {task.metric && (
+                    <Badge variant="outline" className="text-xs">
+                      {task.metric}
+                    </Badge>
+                  )}
+                </div>
                 <p
                   className={`text-sm ${
                     task.completed ? "text-muted-foreground line-through" : ""

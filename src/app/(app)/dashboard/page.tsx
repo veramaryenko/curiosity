@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { MoodCheckIn } from "@/components/mood-check-in";
 import { TaskCheckbox } from "@/components/task-checkbox";
@@ -28,7 +29,8 @@ const mockTask = {
   day_number: 5,
   description:
     "Narysuj 3 proste kształty (koło, kwadrat, trójkąt) i spróbuj je zacieniować",
-  resource_url: null,
+  resource_url: null as string | null,
+  metric: "3 szkice" as string | null,
   completed: false,
 };
 
@@ -66,7 +68,14 @@ export default function DashboardPage() {
       {/* Today's task */}
       <Card>
         <CardHeader>
-          <CardDescription>Dzisiejsze zadanie</CardDescription>
+          <div className="flex items-center justify-between gap-2">
+            <CardDescription>Dzisiejsze zadanie</CardDescription>
+            {mockTask.metric && (
+              <Badge variant="outline" className="text-xs">
+                {mockTask.metric}
+              </Badge>
+            )}
+          </div>
           <CardTitle className="text-lg">{mockTask.description}</CardTitle>
         </CardHeader>
         <CardContent>
