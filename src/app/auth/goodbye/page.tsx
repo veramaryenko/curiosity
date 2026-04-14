@@ -21,8 +21,8 @@ export default function GoodbyePage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button asChild className="w-full">
-            <Link href="/auth/login">Wróć i załóż nowe konto</Link>
+          <Button render={<Link href="/auth/login" />} className="w-full">
+            Wróć i załóż nowe konto
           </Button>
         </CardContent>
       </Card>
