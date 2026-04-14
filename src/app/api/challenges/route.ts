@@ -5,6 +5,7 @@ interface TaskInput {
   day: number;
   description: string;
   resource_url: string | null;
+  metric?: string | null;
 }
 
 export async function POST(request: Request) {
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
       day_number: t.day,
       description: t.description,
       resource_url: t.resource_url ?? null,
+      metric: t.metric ?? null,
       completed: false,
       date: taskDate,
     };

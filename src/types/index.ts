@@ -20,6 +20,11 @@ export interface DailyTask {
   day_number: number;
   description: string;
   resource_url: string | null;
+  /**
+   * Concrete, measurable goal for the day (e.g. "200 słów", "15 minut").
+   * Null for tasks created before the discovery-plan feature landed.
+   */
+  metric: string | null;
   completed: boolean;
   date: string;
 }
@@ -52,6 +57,20 @@ export interface InterestSuggestion {
   description: string;
   emoji: string;
   estimated_minutes: number;
+}
+
+/** One day in a discovery plan — concrete action + measurable goal. */
+export interface DiscoveryPlanTask {
+  day: number;
+  description: string;
+  metric: string | null;
+  resource_url: string | null;
+}
+
+/** Full plan returned by the discovery endpoint. */
+export interface DiscoveryPlanResult {
+  category: string;
+  tasks: DiscoveryPlanTask[];
 }
 
 export interface NotificationPreferences {

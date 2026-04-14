@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,7 +38,6 @@ export default function NewChallengePage() {
   const [tasks, setTasks] = useState<TaskDraft[]>([]);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   function initEmptyTasks(numDays: number) {
     return Array.from({ length: numDays }, (_, i) => ({
@@ -49,34 +49,23 @@ export default function NewChallengePage() {
 
   async function generateWithAI() {
     setGenerating(true);
-    setError(null);
-
     try {
       const res = await fetch("/api/ai/generate-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description,
-          duration_days: days,
-        }),
+        body: JSON.stringify({ title, description, duration_days: days }),
       });
-
-      if (!res.ok) throw new Error("generate");
-      const data = await res.json();
-
-      const generated: TaskDraft[] = data.tasks.map(
-        (t: { day: number; description: string; resource_url: string | null }) => ({
-          day: t.day,
-          description: t.description,
+      if (!res.ok) throw new Error();
+      const { tasks: generated } = await res.json();
+      setTasks(
+        generated.map((t: { day: number; description: string; resource_url: string | null }) => ({
+          ...t,
           resource_url: t.resource_url ?? "",
-        })
+        }))
       );
-
-      setTasks(generated);
       setStep("review");
     } catch {
-      setError(
+      toast.error(
         "Nie udało się wygenerować planu. Spróbuj ponownie albo napisz plan ręcznie."
       );
       setPlanMode(null);
@@ -101,8 +90,6 @@ export default function NewChallengePage() {
 
   async function createChallenge() {
     setSaving(true);
-    setError(null);
-
     try {
       const res = await fetch("/api/challenges", {
         method: "POST",
@@ -118,20 +105,17 @@ export default function NewChallengePage() {
           })),
         }),
       });
-
-      if (!res.ok) throw new Error("save");
-
+      if (!res.ok) throw new Error();
       router.push("/dashboard");
     } catch {
-      setError("Nie udało się zapisać wyzwania. Spróbuj ponownie.");
+      toast.error("Nie udało się zapisać wyzwania. Spróbuj ponownie.");
+    } finally {
       setSaving(false);
     }
   }
 
   async function askAIToReview() {
     setGenerating(true);
-    setError(null);
-
     try {
       const res = await fetch("/api/ai/review-plan", {
         method: "POST",
@@ -144,21 +128,17 @@ export default function NewChallengePage() {
           })),
         }),
       });
-
-      if (!res.ok) throw new Error("review");
-      const data = await res.json();
-
-      const reviewed: TaskDraft[] = data.tasks.map(
-        (t: { day: number; description: string; resource_url: string | null }) => ({
-          day: t.day,
-          description: t.description,
+      if (!res.ok) throw new Error();
+      const { tasks: reviewed } = await res.json();
+      setTasks(
+        reviewed.map((t: { day: number; description: string; resource_url: string | null }) => ({
+          ...t,
           resource_url: t.resource_url ?? "",
-        })
+        }))
       );
-
-      setTasks(reviewed);
+      toast.success("AI poprawiło Twój plan!");
     } catch {
-      setError("Nie udało się sprawdzić planu. Spróbuj ponownie.");
+      toast.error("Nie udało się sprawdzić planu. Spróbuj ponownie.");
     } finally {
       setGenerating(false);
     }
@@ -174,12 +154,6 @@ export default function NewChallengePage() {
           {step === "review" && "Twój plan — przejrzyj i dostosuj"}
         </p>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
 
       {/* Step 1: Goal */}
       {step === "goal" && (
@@ -360,9 +334,7 @@ export default function NewChallengePage() {
             </Button>
             <Button
               onClick={createChallenge}
-              disabled={
-                saving || tasks.some((t) => !t.description.trim())
-              }
+              disabled={saving || tasks.some((t) => !t.description.trim())}
               className="flex-1"
             >
               {saving ? "Zapisuję..." : "Rozpocznij wyzwanie!"}
