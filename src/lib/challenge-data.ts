@@ -2,7 +2,7 @@ import type { Challenge, DailyTask, MoodEntry } from "@/types";
 import { getTodayDateString } from "@/lib/app-date";
 import { createClient } from "@/lib/supabase/server";
 
-export interface DashboardData {
+interface DashboardData {
   challenge: Pick<
     Challenge,
     "id" | "title" | "description" | "duration_days" | "status" | "start_date"
