@@ -89,6 +89,11 @@ export default function NewChallengePage() {
   }
 
   async function createChallenge() {
+    if (tasks.some((t) => !t.description.trim())) {
+      toast.error("Uzupełnij opis każdego dnia zanim zapiszesz wyzwanie.");
+      return;
+    }
+
     setSaving(true);
     try {
       const res = await fetch("/api/challenges", {
@@ -105,9 +110,15 @@ export default function NewChallengePage() {
           })),
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.text();
+        console.error("Save challenge failed", res.status, body);
+        throw new Error(`save ${res.status}`);
+      }
       router.push("/dashboard");
-    } catch {
+      router.refresh();
+    } catch (e) {
+      console.error(e);
       toast.error("Nie udało się zapisać wyzwania. Spróbuj ponownie.");
     } finally {
       setSaving(false);
@@ -334,12 +345,17 @@ export default function NewChallengePage() {
             </Button>
             <Button
               onClick={createChallenge}
-              disabled={saving || tasks.some((t) => !t.description.trim())}
+              disabled={saving}
               className="flex-1"
             >
               {saving ? "Zapisuję..." : "Rozpocznij wyzwanie!"}
             </Button>
           </div>
+          {tasks.some((t) => !t.description.trim()) && (
+            <p className="text-center text-xs text-muted-foreground">
+              Uzupełnij opis każdego dnia, żeby zapisać wyzwanie.
+            </p>
+          )}
         </div>
       )}
     </div>
