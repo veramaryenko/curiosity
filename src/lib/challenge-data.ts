@@ -44,6 +44,20 @@ interface ChallengeDetailData {
   isComplete: boolean;
 }
 
+interface HistoryChallengeData {
+  challenge: Pick<
+    Challenge,
+    | "id"
+    | "title"
+    | "duration_days"
+    | "status"
+    | "start_date"
+    | "end_date"
+  >;
+  completedCount: number;
+  progress: number;
+}
+
 export async function getDashboardData(): Promise<DashboardData | null> {
   const supabase = await createClient();
   const {
@@ -164,4 +178,58 @@ export async function getChallengeDetailData(
     progress,
     isComplete,
   };
+}
+
+export async function getHistoryData(): Promise<HistoryChallengeData[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return [];
+
+  const { data: challenges, error: challengeError } = await supabase
+    .from("challenges")
+    .select("id, title, duration_days, status, start_date, end_date")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (challengeError || !challenges || challenges.length === 0) {
+    return [];
+  }
+
+  const challengeIds = challenges.map((challenge) => challenge.id);
+  const { data: tasks, error: tasksError } = await supabase
+    .from("daily_tasks")
+    .select("challenge_id, completed")
+    .in("challenge_id", challengeIds);
+
+  if (tasksError) {
+    throw new Error("Failed to load challenge history tasks.");
+  }
+
+  const completedByChallenge = new Map<string, number>();
+
+  for (const task of tasks ?? []) {
+    if (!task.completed) continue;
+
+    completedByChallenge.set(
+      task.challenge_id,
+      (completedByChallenge.get(task.challenge_id) ?? 0) + 1
+    );
+  }
+
+  return challenges.map((challenge) => {
+    const completedCount = completedByChallenge.get(challenge.id) ?? 0;
+    const progress =
+      challenge.duration_days > 0
+        ? (completedCount / challenge.duration_days) * 100
+        : 0;
+
+    return {
+      challenge,
+      completedCount,
+      progress,
+    };
+  });
 }

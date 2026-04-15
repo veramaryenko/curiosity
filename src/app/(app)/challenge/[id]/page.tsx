@@ -7,6 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 
+const statusLabel = {
+  active: "Aktywne",
+  completed: "Ukonczone",
+  abandoned: "Przerwane",
+} as const;
+
 export default async function ChallengeDetailPage({
   params,
 }: {
@@ -27,7 +33,7 @@ export default async function ChallengeDetailPage({
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">{challenge.title}</h1>
           <Badge variant={challenge.status === "active" ? "default" : "secondary"}>
-            {challenge.status === "active" ? "Aktywne" : "Zakonczone"}
+            {statusLabel[challenge.status]}
           </Badge>
         </div>
         {challenge.description && (

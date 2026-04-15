@@ -1,57 +1,41 @@
-"use client";
-
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { getHistoryData } from "@/lib/challenge-data";
+import type { ChallengeStatus } from "@/types";
 
-// TODO: Fetch from Supabase
-const mockHistory = [
-  {
-    id: "1",
-    title: "Zaczynam rysować",
-    duration_days: 14,
-    completed_days: 14,
-    status: "completed" as const,
-    start_date: "2026-03-01",
-    end_date: "2026-03-14",
-    overall_feeling: 4,
-    wants_to_continue: true,
-  },
-  {
-    id: "2",
-    title: "Medytacja poranna",
-    duration_days: 7,
-    completed_days: 5,
-    status: "abandoned" as const,
-    start_date: "2026-03-20",
-    end_date: "2026-03-26",
-    overall_feeling: 2,
-    wants_to_continue: false,
-  },
-];
-
-const statusLabel = {
+const statusLabel: Record<ChallengeStatus, string> = {
+  active: "Aktywne",
   completed: "Ukończone",
   abandoned: "Przerwane",
-  active: "Aktywne",
 };
 
-const feelingEmoji: Record<number, string> = {
-  1: "😔",
-  2: "😕",
-  3: "😐",
-  4: "🙂",
-  5: "😊",
+const statusVariant: Record<ChallengeStatus, "default" | "secondary"> = {
+  active: "default",
+  completed: "default",
+  abandoned: "secondary",
 };
 
-export default function HistoryPage() {
-  if (mockHistory.length === 0) {
+function formatDate(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+
+  return new Intl.DateTimeFormat("pl-PL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day));
+}
+
+export default async function HistoryPage() {
+  const history = await getHistoryData();
+
+  if (history.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
         <h1 className="text-2xl font-bold">Brak historii</h1>
         <p className="mt-2 text-muted-foreground">
-          Jeszcze nie ukończyłeś/aś żadnego wyzwania. To nic — zacznij!
+          Jeszcze nie masz zapisanych przygód. Zacznij od nowej.
         </p>
         <Link
           href="/challenge/discover"
@@ -65,62 +49,40 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="space-y-1">
         <h1 className="text-2xl font-bold">Twoja historia</h1>
         <p className="text-muted-foreground">
-          Zobacz jak się rozwijasz i co Ci odpowiada
+          Lista zapisanych przygód i ich postęp.
         </p>
       </div>
 
       <div className="space-y-3">
-        {mockHistory.map((challenge) => {
-          const progress =
-            (challenge.completed_days / challenge.duration_days) * 100;
+        {history.map(({ challenge, completedCount, progress }) => (
+          <Link key={challenge.id} href={`/challenge/${challenge.id}`}>
+            <Card className="transition-all hover:border-primary/30 hover:shadow-sm">
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <h2 className="text-base font-semibold">{challenge.title}</h2>
+                    <p className="text-sm text-muted-foreground">
+                      {formatDate(challenge.start_date)} - {formatDate(challenge.end_date)}
+                    </p>
+                  </div>
+                  <Badge variant={statusVariant[challenge.status]}>
+                    {statusLabel[challenge.status]}
+                  </Badge>
+                </div>
 
-          return (
-            <Link key={challenge.id} href={`/challenge/${challenge.id}`}>
-              <Card className="transition-all hover:shadow-sm hover:border-primary/30">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">
-                      {challenge.title}
-                    </CardTitle>
-                    <Badge
-                      variant={
-                        challenge.status === "completed"
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {statusLabel[challenge.status]}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Progress value={progress} className="h-1.5 flex-1" />
-                    <span className="text-xs text-muted-foreground">
-                      {challenge.completed_days}/{challenge.duration_days} dni
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>
-                      {challenge.start_date} — {challenge.end_date}
-                    </span>
-                    {challenge.overall_feeling && (
-                      <span>
-                        {feelingEmoji[challenge.overall_feeling]}{" "}
-                        {challenge.wants_to_continue
-                          ? "Chce kontynuować"
-                          : "Zakończone"}
-                      </span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          );
-        })}
+                <div className="flex items-center gap-2">
+                  <Progress value={progress} className="h-1.5 flex-1" />
+                  <span className="text-xs text-muted-foreground">
+                    {completedCount}/{challenge.duration_days} dni
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
       </div>
     </div>
   );
