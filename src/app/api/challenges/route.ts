@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { addDaysToDateString, getTodayDateString } from "@/lib/app-date";
 import { createClient } from "@/lib/supabase/server";
 
 interface TaskInput {
@@ -24,11 +25,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
-  const today = new Date();
-  const startDate = today.toISOString().split("T")[0];
-  const endDate = new Date(today.getTime() + (duration_days - 1) * 86400000)
-    .toISOString()
-    .split("T")[0];
+  const startDate = getTodayDateString();
+  const endDate = addDaysToDateString(startDate, duration_days - 1);
 
   const { data: challenge, error: challengeError } = await supabase
     .from("challenges")
@@ -52,11 +50,7 @@ export async function POST(request: Request) {
   }
 
   const taskRows = (tasks as TaskInput[]).map((t) => {
-    const taskDate = new Date(
-      today.getTime() + (t.day - 1) * 86400000
-    )
-      .toISOString()
-      .split("T")[0];
+    const taskDate = addDaysToDateString(startDate, t.day - 1);
 
     return {
       challenge_id: challenge.id,

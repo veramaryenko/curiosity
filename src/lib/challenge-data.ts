@@ -1,4 +1,5 @@
 import type { Challenge, DailyTask, MoodEntry } from "@/types";
+import { getTodayDateString } from "@/lib/app-date";
 import { createClient } from "@/lib/supabase/server";
 
 export interface DashboardData {
@@ -21,10 +22,6 @@ export interface DashboardData {
   progress: number;
   moodEntry: Pick<MoodEntry, "id" | "mood_score" | "note"> | null;
   isComplete: boolean;
-}
-
-function getTodayDateString() {
-  return new Date().toISOString().split("T")[0];
 }
 
 export async function getDashboardData(): Promise<DashboardData | null> {
