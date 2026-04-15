@@ -1,131 +1,219 @@
 ---
 name: update-doc
-description: Analyze current project state after a development session and write/update a comprehensive developer-facing documentation snapshot to .claude/PROJECT_STATE.md so new Claude sessions can resume context without re-investigating the codebase from scratch.
+description: Incrementally analyze the current project state after a development session and update a durable, developer-facing snapshot in .claude/PROJECT_STATE.md so future Claude sessions can resume with minimal re-discovery.
 ---
 
-# update-doc
+# update-doc (v2)
 
 ## Purpose
 
-Produce a durable, human-readable snapshot of the project state that a future Claude session (or a new developer) can read in one shot and understand:
+Produce a stable, incrementally updated snapshot of the project that allows a future Claude session (or a new developer) to quickly understand:
 
-- What the project is and how it's structured
-- What changed recently and why
-- Which modules/files are important and what they do
-- Current in-progress work, open TODOs, and known pitfalls
-- Architectural decisions worth remembering
+- System purpose and structure
+- What changed recently and why it matters
+- Key modules and their responsibilities
+- Current work in progress
+- Known issues, TODOs, and risks
+- Important architectural decisions
 
-The output file is `.claude/PROJECT_STATE.md` (checked into the repo).
+The output file is `.claude/PROJECT_STATE.md`.
+
+This file must prioritize accuracy, signal, and continuity over verbosity.
+
+---
 
 ## When to run
 
-The user invokes this skill manually via `/update-doc` at the end of a programming session. Do NOT run it automatically.
+The user invokes this skill manually via `/update-doc` at the end of a programming session.
+
+Do NOT run automatically.
+
+---
+
+## Core principles
+
+- Do not rewrite stable knowledge unnecessarily
+- Prefer updating over rephrasing
+- Do not guess — mark uncertainty explicitly
+- Prioritize high-signal information over completeness
+- Optimize for next-session usability
+
+---
 
 ## Procedure
 
-Follow these steps in order. Do not skip steps.
+Follow these steps strictly. Do not skip.
 
-### 1. Read the previous snapshot (if any)
+---
 
-Read `.claude/PROJECT_STATE.md` if it exists. Treat it as the baseline — your job is to update it, not to rewrite it from scratch. Preserve stable sections (architecture, conventions) unless they genuinely changed.
+### 1. Read previous snapshot (baseline)
+
+- Read `.claude/PROJECT_STATE.md` if it exists
+- Treat it as source of truth for stable sections
+- Identify:
+  - stable sections (architecture, conventions)
+  - sections likely to change (current focus, recent changes, TODOs)
+
+Do NOT rewrite sections unless:
+- they are outdated
+- or new information contradicts them
+
+---
 
 ### 2. Gather fresh context
 
-Run these in parallel:
+Run in parallel (fail gracefully if any command fails):
 
-- `git log --oneline -30` — recent commits
-- `git log --since="7 days ago" --stat` — what changed lately with file-level detail
-- `git status` — uncommitted work in progress
-- `git diff --stat main...HEAD` — divergence from main (if current branch is not main)
-- `git branch --show-current` — current working branch
-- Read `package.json` — dependencies, scripts, Node/framework versions
-- Read `README.md`, `AGENTS.md`, `CLAUDE.md` — existing top-level docs
-- Glob `src/**/*.{ts,tsx,js,jsx}` to map the source tree (don't read everything — just enumerate)
-- Check for `TODO`, `FIXME`, `HACK`, `XXX` comments via Grep
+Git:
+- `git log --oneline -30`
+- `git log --since="7 days ago" --stat`
+- `git status`
+- `git branch --show-current`
+- `git rev-parse --short HEAD`
+- `git diff --stat main...HEAD` (if applicable)
 
-### 3. Investigate meaningfully
+If `main...HEAD` fails → skip and note limitation.
 
-Don't just list files. For each area that changed recently or that looks load-bearing:
+Project metadata:
+- Read `package.json`
+- Read `README.md`, `AGENTS.md`, `CLAUDE.md` (if present)
 
-- Read the key files to understand what they do
-- Note non-obvious logic, invariants, or gotchas
-- Identify integration points (APIs, DB, external services)
-- Note testing setup and coverage
+Codebase scan (lightweight):
+- Glob: `src/**/*.{ts,tsx,js,jsx}` (DO NOT read all files)
 
-Use the Explore agent for broad investigation if the codebase is large or unfamiliar.
+Prioritize files that:
+- Were modified in last 7 days
+- Appear frequently in git diff
+- Are likely entry points (index, main, app)
+- Contain API handlers, services, or core logic
 
-### 4. Write the snapshot
+TODO scan:
+- Search for TODO, FIXME, HACK, XXX
 
-Overwrite `.claude/PROJECT_STATE.md` with the following structure. Every section is required; if a section has nothing to report, write "Nothing notable." — do not omit the heading.
+---
+
+### 3. Investigate meaningfully (focused analysis)
+
+Only deep-read high-priority files.
+
+For each important module:
+- What does it do?
+- Is it part of core flow?
+- Any non-obvious logic?
+- Any invariants or assumptions?
+- Integration points (APIs, DB, external services)
+
+If unsure:
+- mark as (inferred, not fully verified)
+
+---
+
+### 4. Interpret changes
+
+Classify recent work:
+
+HIGH → architecture, APIs, data models  
+MEDIUM → feature logic  
+LOW → UI, refactors, minor fixes  
+
+Group commits by theme, not chronology.
+
+---
+
+### 5. Write snapshot
+
+Overwrite `.claude/PROJECT_STATE.md`:
 
 ```markdown
 # PROJECT_STATE
 
-_Last updated: YYYY-MM-DD by /update-doc on branch `<branch-name>` at commit `<short-sha>`._
+_Last updated: YYYY-MM-DD by /update-doc on branch `<branch>` at commit `<sha>`._
 
 ## 1. Project overview
-One paragraph: what the product is, who uses it, what problem it solves.
+One paragraph: what the system does.
 
 ## 2. Tech stack
-Framework, language, runtime versions, major libraries, DB, hosting. Call out
-anything non-standard (e.g. "This is a patched Next.js — see AGENTS.md").
+Frameworks, language, runtime, major libraries.
 
 ## 3. Repository map
-Top-level directories and what lives in each. Keep it scannable — no more than
-one line per directory unless something deserves elaboration.
+Top-level structure with short descriptions.
 
 ## 4. Architecture & data flow
-How a request flows through the system. Key modules and their responsibilities.
-Integration points (auth, DB, external APIs). Diagrams in ASCII if helpful.
+How system works. Key modules and integrations.
 
 ## 5. Conventions & patterns
-Naming, folder structure, state management, styling approach, testing
-conventions. Things a new contributor would get wrong on day one.
+Naming, structure, testing, patterns.
 
 ## 6. Current focus
-What is actively being worked on right now. Current branch, its purpose, and
-the state of in-progress work. Pull this from recent commits + uncommitted diff.
+Branch, goal, status, uncommitted work.
 
 ## 7. Recent changes (last 7 days)
-Bulleted summary of meaningful commits grouped by theme. Skip trivia like
-typo fixes. Link commit SHAs.
+
+### HIGH impact
+- ...
+
+### MEDIUM impact
+- ...
+
+### LOW impact
+- ...
 
 ## 8. Open TODOs / known issues
-TODO/FIXME comments in code, known bugs, things marked "temporary". Include
-file:line references.
+
+### Critical
+- file:line — description
+
+### Tech debt
+- ...
+
+### Nice-to-have
+- ...
 
 ## 9. Gotchas & decisions
-Non-obvious behavior, past decisions worth remembering, "don't do X because Y"
-notes. This is the section that saves future-you the most time.
+Important non-obvious things.
 
 ## 10. How to run & test
-Exact commands for dev server, build, tests, lint, typecheck. Env vars needed.
+Commands and env setup.
 
 ## 11. Next steps
-What the next session should probably tackle. Be specific — file paths,
-function names, concrete tasks.
+Concrete tasks.
+
+## 12. Unknowns / needs investigation
+Unclear or inferred parts.
 ```
 
-### 5. Quality checks before finishing
+---
 
-- Every section present and populated (or explicitly marked "Nothing notable.")
-- No fabricated facts — if you didn't verify something, don't claim it
-- File paths use repo-relative paths (e.g. `src/app/page.tsx`, not absolute)
-- Commit SHAs are real and short-form (7 chars)
-- The "Next steps" section is actionable, not vague
-- Length: aim for something a developer can read in 5 minutes. Be dense, not verbose.
+### 6. Quality checks
 
-### 6. Report to the user
+- All sections present
+- No hallucinated facts
+- Uncertainty marked
+- Paths are repo-relative
+- SHAs valid
+- No unnecessary rewrites
+- Next steps actionable
+- Readable in ~5 minutes
 
-After writing the file, tell the user:
-- Path to the updated file
-- Which sections had material changes vs. the previous snapshot
-- Anything notable you discovered during analysis that they should know
+---
 
-Do NOT commit the file automatically. The user decides when to commit.
+### 7. Report to user
+
+After writing:
+
+- Path to file
+- Sections that changed
+- Key findings
+
+Do NOT commit automatically.
+
+---
 
 ## Notes
 
-- If `.claude/PROJECT_STATE.md` does not exist yet, this is the first run — build it from scratch but follow the same structure.
-- If the repo has no commits on the current branch since the last snapshot, still refresh the "Current focus" and "Next steps" sections and bump the timestamp.
-- This snapshot is for humans AND for Claude. Write it so both can use it.
+- If no snapshot exists → create from scratch
+- If no new commits → still update current focus and next steps
+- If git fails → continue and note limitation
+
+Optional:
+- Save history copy in `.claude/history/PROJECT_STATE_<date>.md`
