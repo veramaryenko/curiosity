@@ -14,16 +14,18 @@ function formatDateParts(parts: { year: number; month: number; day: number }) {
 }
 
 function parseDateString(date: string) {
-  const match = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})$/.exec(date);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
 
-  if (!match?.groups) {
+  if (!match) {
     throw new Error(`Invalid date string: ${date}`);
   }
 
+  const [, year, month, day] = match;
+
   return {
-    year: Number(match.groups.year),
-    month: Number(match.groups.month),
-    day: Number(match.groups.day),
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
   };
 }
 
