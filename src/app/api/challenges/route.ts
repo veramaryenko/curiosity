@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { addDaysToDateString, getTodayDateString } from "@/lib/app-date";
 import { sanitizeResourceUrl } from "@/lib/resource-url";
@@ -118,6 +119,10 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/history");
+  revalidatePath(`/challenge/${challenge.id}`);
 
   return NextResponse.json({ challenge_id: challenge.id });
 }
