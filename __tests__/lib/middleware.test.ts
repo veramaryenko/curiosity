@@ -70,4 +70,11 @@ describe("updateSession — przekierowania", () => {
     const response = await updateSession(makeRequest("/dashboard"));
     expect(response.status).not.toBe(307);
   });
+
+  it("przekierowuje zalogowanego użytkownika ze strony głównej / na /dashboard", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "abc", email: "test@test.com" } } });
+    const response = await updateSession(makeRequest("/"));
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/dashboard");
+  });
 });
