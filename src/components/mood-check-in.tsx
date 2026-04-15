@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -11,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { MoodScore } from "@/types";
+import { toast } from "sonner";
 
 const moods: { score: MoodScore; emoji: string; label: string }[] = [
   { score: 1, emoji: "😔", label: "Ciężko" },
@@ -22,19 +24,52 @@ const moods: { score: MoodScore; emoji: string; label: string }[] = [
 
 interface MoodCheckInProps {
   taskId: string;
+  initialMoodEntry?: {
+    id: string;
+    mood_score: MoodScore;
+    note: string | null;
+  } | null;
 }
 
-export function MoodCheckIn({ taskId }: MoodCheckInProps) {
-  const [selectedMood, setSelectedMood] = useState<MoodScore | null>(null);
-  const [note, setNote] = useState("");
-  const [saved, setSaved] = useState(false);
+export function MoodCheckIn({
+  taskId,
+  initialMoodEntry = null,
+}: MoodCheckInProps) {
+  const router = useRouter();
+  const [selectedMood, setSelectedMood] = useState<MoodScore | null>(
+    initialMoodEntry?.mood_score ?? null
+  );
+  const [note, setNote] = useState(initialMoodEntry?.note ?? "");
+  const [saved, setSaved] = useState(initialMoodEntry !== null);
   const [expanded, setExpanded] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   async function save() {
     if (!selectedMood) return;
-    // TODO: Save to Supabase
-    console.log("Save mood", { taskId, mood: selectedMood, note });
-    setSaved(true);
+
+    try {
+      const response = await fetch("/api/mood-entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_id: taskId,
+          mood_score: selectedMood,
+          note: note.trim() || null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Nie udalo sie zapisac nastroju.");
+      }
+
+      setSaved(true);
+      setExpanded(false);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch {
+      toast.error("Nie udalo sie zapisac nastroju. Sprobuj ponownie.");
+    }
   }
 
   if (saved) {
@@ -91,13 +126,18 @@ export function MoodCheckIn({ taskId }: MoodCheckInProps) {
         />
 
         <div className="flex gap-2">
-          <Button onClick={save} disabled={!selectedMood} className="flex-1">
-            Zapisz
+          <Button
+            onClick={save}
+            disabled={!selectedMood || isPending}
+            className="flex-1"
+          >
+            {isPending ? "Zapisuje..." : "Zapisz"}
           </Button>
           <Button
             variant="ghost"
             onClick={() => setExpanded(false)}
             className="text-muted-foreground"
+            disabled={isPending}
           >
             Anuluj
           </Button>

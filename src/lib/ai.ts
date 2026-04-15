@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import type { InterestSuggestion, DiscoveryPlanResult } from "@/types";
+import { sanitizeResourceUrl } from "@/lib/resource-url";
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
@@ -130,28 +131,6 @@ Odpowiedz TYLKO jako JSON array, bez żadnego innego tekstu:
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error("AI did not return valid JSON");
   return JSON.parse(jsonMatch[0]);
-}
-
-/**
- * Sanitize a resource URL from the LLM: only allow YouTube search and Google search
- * URLs. LLMs hallucinate specific video/article URLs, but search URLs always work
- * because they are deterministic query strings.
- */
-function sanitizeResourceUrl(url: unknown): string | null {
-  if (typeof url !== "string" || url.length === 0) return null;
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.replace(/^www\./, "");
-    if (host === "youtube.com" && parsed.pathname === "/results") {
-      return parsed.toString();
-    }
-    if (host === "google.com" && parsed.pathname === "/search") {
-      return parsed.toString();
-    }
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 /**

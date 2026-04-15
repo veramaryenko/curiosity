@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getTodayDateString } from "@/lib/app-date";
 import { sendDailyReminder } from "@/lib/email";
 
 // Use service role key for cron — this bypasses RLS
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getTodayDateString();
 
   // Get today's tasks with user info and notification preferences
   const { data: tasks, error } = await supabase

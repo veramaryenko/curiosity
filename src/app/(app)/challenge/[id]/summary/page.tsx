@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -25,7 +25,6 @@ const feelings: { score: MoodScore; emoji: string; label: string }[] = [
 
 export default function ChallengeSummaryPage() {
   const router = useRouter();
-  const params = useParams();
 
   const [overallFeeling, setOverallFeeling] = useState<MoodScore | null>(null);
   const [liked, setLiked] = useState("");
@@ -51,7 +50,7 @@ export default function ChallengeSummaryPage() {
 
   async function continueChallenge() {
     // TODO: Create new challenge as continuation
-    router.push("/challenge/new");
+    router.push("/challenge/discover");
   }
 
   if (aiInsight) {
@@ -105,7 +104,7 @@ export default function ChallengeSummaryPage() {
             </Button>
           ) : (
             <Button
-              onClick={() => router.push("/challenge/new")}
+              onClick={() => router.push("/challenge/discover")}
               className="flex-1"
               size="lg"
             >

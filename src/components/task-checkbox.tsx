@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 interface TaskCheckboxProps {
   taskId: string;
@@ -10,13 +12,33 @@ interface TaskCheckboxProps {
 }
 
 export function TaskCheckbox({ taskId, completed: initial }: TaskCheckboxProps) {
+  const router = useRouter();
   const [completed, setCompleted] = useState(initial);
+  const [isPending, startTransition] = useTransition();
 
-  async function toggle() {
-    const next = !completed;
+  async function toggle(checked: boolean | "indeterminate") {
+    const next = checked === true;
+    const previous = completed;
     setCompleted(next);
-    // TODO: Update in Supabase
-    console.log("Toggle task", taskId, next);
+
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: next }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Nie udalo sie zaktualizowac zadania.");
+      }
+
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch {
+      setCompleted(previous);
+      toast.error("Nie udalo sie zapisac postepu. Sprobuj ponownie.");
+    }
   }
 
   return (
@@ -25,6 +47,7 @@ export function TaskCheckbox({ taskId, completed: initial }: TaskCheckboxProps) 
         id={`task-${taskId}`}
         checked={completed}
         onCheckedChange={toggle}
+        disabled={isPending}
         className="h-6 w-6"
       />
       <Label

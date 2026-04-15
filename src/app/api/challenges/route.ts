@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { addDaysToDateString, getTodayDateString } from "@/lib/app-date";
+import { sanitizeResourceUrl } from "@/lib/resource-url";
 import { createClient } from "@/lib/supabase/server";
 
 interface TaskInput {
@@ -6,6 +8,40 @@ interface TaskInput {
   description: string;
   resource_url: string | null;
   metric?: string | null;
+}
+
+function sanitizeTaskInput(task: unknown): TaskInput | null {
+  if (!task || typeof task !== "object") {
+    return null;
+  }
+
+  const rawTask = task as Record<string, unknown>;
+  const rawDay = rawTask.day;
+  const description =
+    typeof rawTask.description === "string" ? rawTask.description.trim() : "";
+  const metric =
+    typeof rawTask.metric === "string" && rawTask.metric.trim().length > 0
+      ? rawTask.metric.trim()
+      : null;
+  const resource_url = sanitizeResourceUrl(rawTask.resource_url);
+
+  if (
+    typeof rawDay !== "number" ||
+    !Number.isInteger(rawDay) ||
+    rawDay < 1 ||
+    description.length === 0
+  ) {
+    return null;
+  }
+
+  const day = rawDay;
+
+  return {
+    day,
+    description,
+    metric,
+    resource_url,
+  };
 }
 
 export async function POST(request: Request) {
@@ -20,15 +56,20 @@ export async function POST(request: Request) {
 
   const { title, description, duration_days, tasks } = await request.json();
 
-  if (!title || !duration_days || !tasks?.length) {
+  if (!title || !duration_days || !Array.isArray(tasks) || tasks.length === 0) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
-  const today = new Date();
-  const startDate = today.toISOString().split("T")[0];
-  const endDate = new Date(today.getTime() + (duration_days - 1) * 86400000)
-    .toISOString()
-    .split("T")[0];
+  const sanitizedTasks = tasks
+    .map(sanitizeTaskInput)
+    .filter((task): task is TaskInput => task !== null);
+
+  if (sanitizedTasks.length !== tasks.length) {
+    return NextResponse.json({ error: "Invalid task input" }, { status: 400 });
+  }
+
+  const startDate = getTodayDateString();
+  const endDate = addDaysToDateString(startDate, duration_days - 1);
 
   const { data: challenge, error: challengeError } = await supabase
     .from("challenges")
@@ -51,12 +92,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const taskRows = (tasks as TaskInput[]).map((t) => {
-    const taskDate = new Date(
-      today.getTime() + (t.day - 1) * 86400000
-    )
-      .toISOString()
-      .split("T")[0];
+  const taskRows = sanitizedTasks.map((t) => {
+    const taskDate = addDaysToDateString(startDate, t.day - 1);
 
     return {
       challenge_id: challenge.id,

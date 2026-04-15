@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,32 +11,12 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { MoodCheckIn } from "@/components/mood-check-in";
 import { TaskCheckbox } from "@/components/task-checkbox";
+import { getDashboardData } from "@/lib/challenge-data";
 
-// TODO: Replace with real data from Supabase
-const mockChallenge = {
-  id: "1",
-  title: "Zaczynam rysować",
-  description: "Codzienne szkice przez 14 dni",
-  duration_days: 14,
-  start_date: "2026-04-01",
-  current_day: 5,
-};
+export default async function DashboardPage() {
+  const dashboardData = await getDashboardData();
 
-const mockTask = {
-  id: "1",
-  day_number: 5,
-  description:
-    "Narysuj 3 proste kształty (koło, kwadrat, trójkąt) i spróbuj je zacieniować",
-  resource_url: null as string | null,
-  metric: "3 szkice" as string | null,
-  completed: false,
-};
-
-export default function DashboardPage() {
-  const hasActiveChallenge = true; // TODO: check from DB
-  const progress = (mockChallenge.current_day / mockChallenge.duration_days) * 100;
-
-  if (!hasActiveChallenge) {
+  if (!dashboardData) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center space-y-6 py-20 text-center">
         <div className="space-y-2">
@@ -47,20 +25,23 @@ export default function DashboardPage() {
             Nie masz jeszcze aktywnego wyzwania. Czas to zmienić?
           </p>
         </div>
-        <Link href="/challenge/new">
-          <Button size="lg">Rozpocznij wyzwanie</Button>
+        <Link href="/challenge/discover">
+          <Button size="lg">Rozpocznij przygodę</Button>
         </Link>
       </div>
     );
   }
 
+  const { challenge, task, completedCount, currentDay, progress, moodEntry, isComplete } =
+    dashboardData;
+
   return (
     <div className="space-y-6">
       {/* Challenge header */}
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold">{mockChallenge.title}</h1>
+        <h1 className="text-2xl font-bold">{challenge.title}</h1>
         <p className="text-sm text-muted-foreground">
-          Dzień {mockChallenge.current_day} z {mockChallenge.duration_days}
+          Dzien {currentDay} z {challenge.duration_days}
         </p>
         <Progress value={progress} className="mt-2 h-2" />
       </div>
@@ -70,22 +51,19 @@ export default function DashboardPage() {
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
             <CardDescription>Dzisiejsze zadanie</CardDescription>
-            {mockTask.metric && (
+            {task.metric && (
               <Badge variant="outline" className="text-xs">
-                {mockTask.metric}
+                {task.metric}
               </Badge>
             )}
           </div>
-          <CardTitle className="text-lg">{mockTask.description}</CardTitle>
+          <CardTitle className="text-lg">{task.description}</CardTitle>
         </CardHeader>
         <CardContent>
-          <TaskCheckbox
-            taskId={mockTask.id}
-            completed={mockTask.completed}
-          />
-          {mockTask.resource_url && (
+          <TaskCheckbox taskId={task.id} completed={task.completed} />
+          {task.resource_url && (
             <a
-              href={mockTask.resource_url}
+              href={task.resource_url}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-3 inline-block text-sm text-primary underline underline-offset-4"
@@ -97,21 +75,27 @@ export default function DashboardPage() {
       </Card>
 
       {/* Mood check-in (optional) */}
-      <MoodCheckIn taskId={mockTask.id} />
+      <MoodCheckIn taskId={task.id} initialMoodEntry={moodEntry} />
 
       {/* Quick actions */}
       <div className="flex gap-3">
-        <Link href={`/challenge/${mockChallenge.id}`} className="flex-1">
+        <Link href={`/challenge/${challenge.id}`} className="flex-1">
           <Button variant="outline" className="w-full">
             Cały plan
           </Button>
         </Link>
-        {mockChallenge.current_day >= mockChallenge.duration_days && (
-          <Link href={`/challenge/${mockChallenge.id}/summary`} className="flex-1">
+        {isComplete && (
+          <Link href={`/challenge/${challenge.id}/summary`} className="flex-1">
             <Button className="w-full">Podsumowanie</Button>
           </Link>
         )}
       </div>
+
+      <p className="text-sm text-muted-foreground">
+        Ukonczono {completedCount} z {challenge.duration_days} dni.
+      </p>
     </div>
   );
 }
+
+
