@@ -25,7 +25,12 @@ function sanitizeTaskInput(task: unknown): TaskInput | null {
       : null;
   const resource_url = sanitizeResourceUrl(rawTask.resource_url);
 
-  if (!Number.isInteger(rawDay) || rawDay < 1 || description.length === 0) {
+  if (
+    typeof rawDay !== "number" ||
+    !Number.isInteger(rawDay) ||
+    rawDay < 1 ||
+    description.length === 0
+  ) {
     return null;
   }
 
