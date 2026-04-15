@@ -16,7 +16,7 @@ function sanitizeTaskInput(task: unknown): TaskInput | null {
   }
 
   const rawTask = task as Record<string, unknown>;
-  const day = rawTask.day;
+  const rawDay = rawTask.day;
   const description =
     typeof rawTask.description === "string" ? rawTask.description.trim() : "";
   const metric =
@@ -25,9 +25,11 @@ function sanitizeTaskInput(task: unknown): TaskInput | null {
       : null;
   const resource_url = sanitizeResourceUrl(rawTask.resource_url);
 
-  if (!Number.isInteger(day) || day < 1 || description.length === 0) {
+  if (!Number.isInteger(rawDay) || rawDay < 1 || description.length === 0) {
     return null;
   }
+
+  const day = rawDay;
 
   return {
     day,
