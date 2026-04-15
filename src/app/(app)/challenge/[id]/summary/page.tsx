@@ -50,7 +50,7 @@ export default function ChallengeSummaryPage() {
 
   async function continueChallenge() {
     // TODO: Create new challenge as continuation
-    router.push("/challenge/new");
+    router.push("/challenge/discover");
   }
 
   if (aiInsight) {
@@ -104,7 +104,7 @@ export default function ChallengeSummaryPage() {
             </Button>
           ) : (
             <Button
-              onClick={() => router.push("/challenge/new")}
+              onClick={() => router.push("/challenge/discover")}
               className="flex-1"
               size="lg"
             >

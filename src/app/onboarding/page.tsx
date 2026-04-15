@@ -124,10 +124,10 @@ export default function OnboardingPage() {
               Zaczynamy →
             </Button>
             <Link
-              href="/challenge/new"
+              href="/challenge/discover"
               className="block text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
             >
-              Już wiem co chcę robić → stwórz wyzwanie ręcznie
+              Już wiem co chcę robić → zacznij nową przygodę
             </Link>
           </div>
         )}

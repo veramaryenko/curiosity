@@ -39,6 +39,21 @@ export default function DiscoverPage() {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  function updateTask(
+    index: number,
+    field: "description" | "metric" | "resource_url",
+    value: string
+  ) {
+    setTasks((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        [field]: field === "description" ? value : value.trim() || null,
+      };
+      return updated;
+    });
+  }
+
   async function callGeneratePlan(): Promise<boolean> {
     setGenerating(true);
     try {
@@ -109,7 +124,7 @@ export default function DiscoverPage() {
         <p className="text-muted-foreground">
           {step === "goal" && "Co chcesz spróbować?"}
           {step === "duration" && "Ile dni chcesz posmakować?"}
-          {step === "plan" && "Twój plan — przejrzyj i startuj"}
+          {step === "plan" && "Twój plan — dopracuj go i startuj"}
         </p>
       </div>
 
@@ -251,7 +266,7 @@ export default function DiscoverPage() {
           </div>
 
           <div className="space-y-3">
-            {tasks.map((task) => (
+            {tasks.map((task, index) => (
               <Card key={task.day}>
                 <CardContent className="space-y-2 p-4">
                   <div className="flex items-center justify-between gap-2">
@@ -264,19 +279,47 @@ export default function DiscoverPage() {
                       </Badge>
                     )}
                   </div>
-                  <p className="text-sm leading-relaxed">{task.description}</p>
-                  {task.resource_url && (
-                    <a
-                      href={task.resource_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block text-xs text-primary underline underline-offset-2"
-                    >
-                      {task.resource_url.includes("youtube.com")
-                        ? "Szukaj na YouTube ↗"
-                        : "Szukaj w Google ↗"}
-                    </a>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor={`task-description-${task.day}`}>
+                      Zadanie
+                    </Label>
+                    <Textarea
+                      id={`task-description-${task.day}`}
+                      value={task.description}
+                      onChange={(e) =>
+                        updateTask(index, "description", e.target.value)
+                      }
+                      rows={2}
+                      className="resize-none"
+                    />
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`task-metric-${task.day}`}>
+                        Mierzalny cel
+                      </Label>
+                      <Input
+                        id={`task-metric-${task.day}`}
+                        value={task.metric ?? ""}
+                        onChange={(e) => updateTask(index, "metric", e.target.value)}
+                        placeholder="np. 15 minut, 3 szkice"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`task-resource-${task.day}`}>
+                        Link pomocniczy
+                      </Label>
+                      <Input
+                        id={`task-resource-${task.day}`}
+                        value={task.resource_url ?? ""}
+                        onChange={(e) =>
+                          updateTask(index, "resource_url", e.target.value)
+                        }
+                        placeholder="https://..."
+                        type="url"
+                      />
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -287,7 +330,12 @@ export default function DiscoverPage() {
           <div className="space-y-3">
             <Button
               onClick={startChallenge}
-              disabled={saving || generating || tasks.length === 0}
+              disabled={
+                saving ||
+                generating ||
+                tasks.length === 0 ||
+                tasks.some((task) => !task.description.trim())
+              }
               size="lg"
               className="w-full"
             >
@@ -311,6 +359,11 @@ export default function DiscoverPage() {
                 {generating ? "generuję..." : "wygeneruj inny plan"}
               </button>
             </div>
+            {tasks.some((task) => !task.description.trim()) && (
+              <p className="text-center text-xs text-muted-foreground">
+                Uzupełnij opis każdego dnia, żeby wystartować.
+              </p>
+            )}
           </div>
         </div>
       )}

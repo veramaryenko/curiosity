@@ -54,10 +54,10 @@ export default function HistoryPage() {
           Jeszcze nie ukończyłeś/aś żadnego wyzwania. To nic — zacznij!
         </p>
         <Link
-          href="/challenge/new"
+          href="/challenge/discover"
           className="mt-6 rounded-lg bg-primary px-6 py-2 text-sm font-medium text-primary-foreground"
         >
-          Nowe wyzwanie
+          Nowa przygoda
         </Link>
       </div>
     );

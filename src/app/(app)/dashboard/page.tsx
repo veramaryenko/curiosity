@@ -25,8 +25,8 @@ export default async function DashboardPage() {
             Nie masz jeszcze aktywnego wyzwania. Czas to zmienić?
           </p>
         </div>
-        <Link href="/challenge/new">
-          <Button size="lg">Rozpocznij wyzwanie</Button>
+        <Link href="/challenge/discover">
+          <Button size="lg">Rozpocznij przygodę</Button>
         </Link>
       </div>
     );
