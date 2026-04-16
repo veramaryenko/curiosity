@@ -42,12 +42,14 @@ export async function PATCH(
       challenges!inner (
         id,
         user_id,
-        status
+        status,
+        deleted_at
       )
     `
     )
     .eq("id", id)
     .eq("challenges.user_id", user.id)
+    .is("challenges.deleted_at", null)
     .maybeSingle()) as { data: OwnedTaskRecord | null };
 
   if (!task) {
@@ -89,7 +91,8 @@ export async function PATCH(
     const { error: challengeStatusError } = await supabase
       .from("challenges")
       .update({ status: nextStatus })
-      .eq("id", task.challenge_id);
+      .eq("id", task.challenge_id)
+      .is("deleted_at", null);
 
     if (challengeStatusError) {
       return NextResponse.json(

@@ -23,8 +23,14 @@ export async function DELETE() {
 
   // Delete user data (child rows first). Ignore errors from tables that may
   // not exist yet — the important part is deleting the auth user.
+  const adminClient = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serviceRoleKey,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
   try {
-    const { data: challenges } = await supabase
+    const { data: challenges } = await adminClient
       .from("challenges")
       .select("id")
       .eq("user_id", user.id);
@@ -32,16 +38,16 @@ export async function DELETE() {
     const challengeIds = (challenges ?? []).map((c) => c.id);
 
     if (challengeIds.length > 0) {
-      await supabase
+      await adminClient
         .from("daily_tasks")
         .delete()
         .in("challenge_id", challengeIds);
     }
 
-    await supabase.from("mood_entries").delete().eq("user_id", user.id);
-    await supabase.from("reflections").delete().eq("user_id", user.id);
-    await supabase.from("challenges").delete().eq("user_id", user.id);
-    await supabase
+    await adminClient.from("mood_entries").delete().eq("user_id", user.id);
+    await adminClient.from("reflections").delete().eq("user_id", user.id);
+    await adminClient.from("challenges").delete().eq("user_id", user.id);
+    await adminClient
       .from("notification_preferences")
       .delete()
       .eq("user_id", user.id);
@@ -49,13 +55,6 @@ export async function DELETE() {
     console.error("DELETE /api/account: error deleting user data:", err);
     // Continue — still try to delete the auth user
   }
-
-  // Delete the auth user via admin client
-  const adminClient = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    serviceRoleKey,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
 
   const { error: deleteError } = await adminClient.auth.admin.deleteUser(
     user.id

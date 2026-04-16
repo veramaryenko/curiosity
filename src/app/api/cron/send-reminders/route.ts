@@ -33,12 +33,15 @@ export async function GET(request: Request) {
         title,
         duration_days,
         status,
-        user_id
+        user_id,
+        deleted_at
       )
     `
     )
     .eq("date", today)
-    .eq("completed", false);
+    .eq("completed", false)
+    .eq("challenges.status", "active")
+    .is("challenges.deleted_at", null);
 
   if (error || !tasks) {
     return NextResponse.json({ error: "Failed to fetch tasks" }, { status: 500 });

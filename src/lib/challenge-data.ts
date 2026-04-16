@@ -71,6 +71,7 @@ export async function getDashboardData(): Promise<DashboardData | null> {
     .select("id, title, description, duration_days, status, start_date")
     .eq("user_id", user.id)
     .eq("status", "active")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -140,6 +141,7 @@ export async function getChallengeDetailData(
     .select("id, title, description, duration_days, status, start_date")
     .eq("id", challengeId)
     .eq("user_id", user.id)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (challengeError) {
@@ -192,6 +194,7 @@ export async function getHistoryData(): Promise<HistoryChallengeData[]> {
     .from("challenges")
     .select("id, title, duration_days, status, start_date, end_date")
     .eq("user_id", user.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (challengeError || !challenges || challenges.length === 0) {

@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { addDaysToDateString, getTodayDateString } from "@/lib/app-date";
 import { sanitizeResourceUrl } from "@/lib/resource-url";
 import { createClient } from "@/lib/supabase/server";
@@ -160,11 +161,31 @@ export async function POST(request: Request) {
     .insert(taskRows);
 
   if (tasksError) {
-    // Roll back the challenge if tasks failed
-    const { error: rollbackError } = await supabase
-      .from("challenges")
-      .delete()
-      .eq("id", challenge.id);
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    let rollbackError: { message?: string } | null = null;
+
+    if (serviceRoleKey && supabaseUrl) {
+      const adminClient = createAdminClient(supabaseUrl, serviceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+
+      ({ error: rollbackError } = await adminClient
+        .from("challenges")
+        .delete()
+        .eq("id", challenge.id));
+    } else {
+      console.error(
+        "[POST /api/challenges] Missing Supabase service-role rollback configuration. Falling back to soft delete."
+      );
+
+      ({ error: rollbackError } = await supabase
+        .from("challenges")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", challenge.id)
+        .eq("user_id", user.id)
+        .is("deleted_at", null));
+    }
 
     if (rollbackError) {
       console.error("Challenge rollback failed:", rollbackError);
