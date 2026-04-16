@@ -115,7 +115,8 @@ export default function NewChallengePage() {
         console.error("Save challenge failed", res.status, body);
         throw new Error(`save ${res.status}`);
       }
-      router.push("/dashboard");
+      const data = (await res.json()) as { challenge_id: string };
+      router.replace(`/challenge/${data.challenge_id}`);
       router.refresh();
     } catch (e) {
       console.error(e);

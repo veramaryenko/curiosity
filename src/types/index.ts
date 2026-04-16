@@ -12,6 +12,7 @@ export interface Challenge {
   start_date: string;
   end_date: string;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface DailyTask {

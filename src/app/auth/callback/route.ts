@@ -17,7 +17,8 @@ export async function GET(request: Request) {
       const { count } = await supabase
         .from("challenges")
         .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id);
+        .eq("user_id", user.id)
+        .is("deleted_at", null);
 
       if (count === 0) {
         return NextResponse.redirect(new URL("/onboarding", request.url));

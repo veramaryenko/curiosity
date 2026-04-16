@@ -38,12 +38,14 @@ export async function POST(request: Request) {
       challenge_id,
       challenges!inner (
         id,
-        user_id
+        user_id,
+        deleted_at
       )
     `
     )
     .eq("id", taskId)
     .eq("challenges.user_id", user.id)
+    .is("challenges.deleted_at", null)
     .maybeSingle();
 
   if (!task) {

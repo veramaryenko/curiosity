@@ -110,7 +110,9 @@ export default function DiscoverPage() {
         }),
       });
       if (!res.ok) throw new Error();
-      router.push("/dashboard");
+      const data = (await res.json()) as { challenge_id: string };
+      router.replace(`/challenge/${data.challenge_id}`);
+      router.refresh();
     } catch {
       toast.error("Nie udało się zapisać wyzwania. Spróbuj ponownie.");
       setSaving(false);

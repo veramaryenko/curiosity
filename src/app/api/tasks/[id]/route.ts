@@ -1,6 +1,17 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import type { ChallengeStatus } from "@/types";
+
+interface OwnedTaskRecord {
+  id: string;
+  challenge_id: string;
+  challenges: {
+    id: string;
+    user_id: string;
+    status: ChallengeStatus;
+  };
+}
 
 export async function PATCH(
   request: Request,
@@ -22,7 +33,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
-  const { data: task } = await supabase
+  const { data: task } = (await supabase
     .from("daily_tasks")
     .select(
       `
@@ -30,13 +41,16 @@ export async function PATCH(
       challenge_id,
       challenges!inner (
         id,
-        user_id
+        user_id,
+        status,
+        deleted_at
       )
     `
     )
     .eq("id", id)
     .eq("challenges.user_id", user.id)
-    .maybeSingle();
+    .is("challenges.deleted_at", null)
+    .maybeSingle()) as { data: OwnedTaskRecord | null };
 
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
@@ -54,7 +68,42 @@ export async function PATCH(
     );
   }
 
+  const { data: challengeTasks, error: challengeTasksError } = await supabase
+    .from("daily_tasks")
+    .select("completed")
+    .eq("challenge_id", task.challenge_id);
+
+  if (challengeTasksError) {
+    return NextResponse.json(
+      { error: "Failed to recalculate challenge status" },
+      { status: 500 }
+    );
+  }
+
+  const allTasksComplete =
+    (challengeTasks?.length ?? 0) > 0 &&
+    challengeTasks?.every((challengeTask) => challengeTask.completed);
+  const currentStatus = task.challenges.status;
+
+  if (currentStatus !== "abandoned") {
+    const nextStatus = allTasksComplete ? "completed" : "active";
+
+    const { error: challengeStatusError } = await supabase
+      .from("challenges")
+      .update({ status: nextStatus })
+      .eq("id", task.challenge_id)
+      .is("deleted_at", null);
+
+    if (challengeStatusError) {
+      return NextResponse.json(
+        { error: "Failed to update challenge status" },
+        { status: 500 }
+      );
+    }
+  }
+
   revalidatePath("/dashboard");
+  revalidatePath("/history");
   revalidatePath(`/challenge/${task.challenge_id}`);
 
   return NextResponse.json({ success: true });

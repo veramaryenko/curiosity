@@ -1,4 +1,6 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { addDaysToDateString, getTodayDateString } from "@/lib/app-date";
 import { sanitizeResourceUrl } from "@/lib/resource-url";
 import { createClient } from "@/lib/supabase/server";
@@ -8,6 +10,30 @@ interface TaskInput {
   description: string;
   resource_url: string | null;
   metric?: string | null;
+}
+
+function isValidDurationDays(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function hasContiguousTaskDays(tasks: TaskInput[], durationDays: number) {
+  if (tasks.length !== durationDays) {
+    return false;
+  }
+
+  const uniqueDays = new Set(tasks.map((task) => task.day));
+
+  if (uniqueDays.size !== tasks.length) {
+    return false;
+  }
+
+  for (let day = 1; day <= durationDays; day += 1) {
+    if (!uniqueDays.has(day)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function sanitizeTaskInput(task: unknown): TaskInput | null {
@@ -54,9 +80,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { title, description, duration_days, tasks } = await request.json();
+  const body = (await request.json()) as {
+    title?: unknown;
+    description?: unknown;
+    duration_days?: unknown;
+    tasks?: unknown;
+  };
 
-  if (!title || !duration_days || !Array.isArray(tasks) || tasks.length === 0) {
+  const title =
+    typeof body.title === "string" ? body.title.trim() : "";
+  const description =
+    typeof body.description === "string" ? body.description.trim() : "";
+  const durationDays = body.duration_days;
+  const tasks = body.tasks;
+
+  if (
+    title.length === 0 ||
+    !isValidDurationDays(durationDays) ||
+    !Array.isArray(tasks) ||
+    tasks.length === 0
+  ) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
@@ -68,16 +111,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid task input" }, { status: 400 });
   }
 
+  if (!hasContiguousTaskDays(sanitizedTasks, durationDays)) {
+    return NextResponse.json(
+      { error: "Tasks must cover each day exactly once" },
+      { status: 400 }
+    );
+  }
+
   const startDate = getTodayDateString();
-  const endDate = addDaysToDateString(startDate, duration_days - 1);
+  const endDate = addDaysToDateString(startDate, durationDays - 1);
 
   const { data: challenge, error: challengeError } = await supabase
     .from("challenges")
     .insert({
       user_id: user.id,
       title,
-      description: description ?? "",
-      duration_days,
+      description,
+      duration_days: durationDays,
       status: "active",
       start_date: startDate,
       end_date: endDate,
@@ -111,13 +161,45 @@ export async function POST(request: Request) {
     .insert(taskRows);
 
   if (tasksError) {
-    // Roll back the challenge if tasks failed
-    await supabase.from("challenges").delete().eq("id", challenge.id);
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    let rollbackError: { message?: string } | null = null;
+
+    if (serviceRoleKey && supabaseUrl) {
+      const adminClient = createAdminClient(supabaseUrl, serviceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+
+      ({ error: rollbackError } = await adminClient
+        .from("challenges")
+        .delete()
+        .eq("id", challenge.id));
+    } else {
+      console.error(
+        "[POST /api/challenges] Missing Supabase service-role rollback configuration. Falling back to soft delete."
+      );
+
+      ({ error: rollbackError } = await supabase
+        .from("challenges")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", challenge.id)
+        .eq("user_id", user.id)
+        .is("deleted_at", null));
+    }
+
+    if (rollbackError) {
+      console.error("Challenge rollback failed:", rollbackError);
+    }
+
     return NextResponse.json(
       { error: "Failed to create tasks" },
       { status: 500 }
     );
   }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/history");
+  revalidatePath(`/challenge/${challenge.id}`);
 
   return NextResponse.json({ challenge_id: challenge.id });
 }
