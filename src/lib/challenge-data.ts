@@ -1,4 +1,10 @@
-import type { Challenge, DailyTask, MoodEntry } from "@/types";
+import type {
+  Challenge,
+  ChallengeStatus,
+  DailyTask,
+  MoodEntry,
+  MoodScore,
+} from "@/types";
 import { getTodayDateString } from "@/lib/app-date";
 import { createClient } from "@/lib/supabase/server";
 
@@ -164,4 +170,95 @@ export async function getChallengeDetailData(
     progress,
     isComplete,
   };
+}
+
+export interface HistoryItem {
+  id: string;
+  title: string;
+  duration_days: number;
+  completed_days: number;
+  status: ChallengeStatus;
+  start_date: string;
+  end_date: string;
+  overall_feeling: MoodScore | null;
+  wants_to_continue: boolean | null;
+}
+
+export async function getHistoryData(): Promise<HistoryItem[] | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  const { data: challenges, error: challengesError } = await supabase
+    .from("challenges")
+    .select("id, title, duration_days, status, start_date, end_date")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (challengesError) {
+    throw new Error("Failed to load history.");
+  }
+
+  if (!challenges || challenges.length === 0) {
+    return [];
+  }
+
+  const ids = challenges.map((c) => c.id);
+
+  const { data: tasks, error: tasksError } = await supabase
+    .from("daily_tasks")
+    .select("challenge_id, completed")
+    .in("challenge_id", ids);
+
+  if (tasksError) {
+    throw new Error("Failed to load history.");
+  }
+
+  const completedByChallenge = new Map<string, number>();
+  for (const task of tasks ?? []) {
+    if (task.completed === true) {
+      completedByChallenge.set(
+        task.challenge_id,
+        (completedByChallenge.get(task.challenge_id) ?? 0) + 1
+      );
+    }
+  }
+
+  const { data: reflections, error: reflectionsError } = await supabase
+    .from("reflections")
+    .select("challenge_id, overall_feeling, wants_to_continue")
+    .in("challenge_id", ids);
+
+  if (reflectionsError) {
+    throw new Error("Failed to load history.");
+  }
+
+  const reflectionByChallenge = new Map<
+    string,
+    { overall_feeling: MoodScore | null; wants_to_continue: boolean | null }
+  >();
+  for (const reflection of reflections ?? []) {
+    reflectionByChallenge.set(reflection.challenge_id, {
+      overall_feeling: reflection.overall_feeling as MoodScore | null,
+      wants_to_continue: reflection.wants_to_continue,
+    });
+  }
+
+  return challenges.map((challenge) => {
+    const reflection = reflectionByChallenge.get(challenge.id);
+    return {
+      id: challenge.id,
+      title: challenge.title,
+      duration_days: challenge.duration_days,
+      completed_days: completedByChallenge.get(challenge.id) ?? 0,
+      status: challenge.status as ChallengeStatus,
+      start_date: challenge.start_date,
+      end_date: challenge.end_date,
+      overall_feeling: reflection?.overall_feeling ?? null,
+      wants_to_continue: reflection?.wants_to_continue ?? null,
+    };
+  });
 }

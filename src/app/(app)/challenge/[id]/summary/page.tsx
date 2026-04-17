@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,8 @@ const feelings: { score: MoodScore; emoji: string; label: string }[] = [
 
 export default function ChallengeSummaryPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const challengeId = params.id;
 
   const [overallFeeling, setOverallFeeling] = useState<MoodScore | null>(null);
   const [liked, setLiked] = useState("");
@@ -38,18 +41,36 @@ export default function ChallengeSummaryPage() {
     if (!overallFeeling || wantsToContinue === null) return;
     setSaving(true);
 
-    // TODO: Save reflection to Supabase
-    // TODO: Get AI insight based on mood entries + reflection
-    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const res = await fetch("/api/reflections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challenge_id: challengeId,
+          overall_feeling: overallFeeling,
+          liked,
+          disliked,
+          obstacles,
+          wants_to_continue: wantsToContinue,
+        }),
+      });
 
-    setAiInsight(
-      "Na podstawie Twoich wpisów zauważam, że czujesz się najlepiej w dni kiedy zadania były kreatywne i nie wymagały zbyt dużo przygotowania. To świetna wskazówka na przyszłość!"
-    );
+      if (!res.ok) {
+        throw new Error("Failed to save reflection");
+      }
+
+      const data = (await res.json()) as { insight: string | null };
+      setAiInsight(data.insight ?? "Dziękujemy za refleksję!");
+    } catch {
+      toast.error("Nie udało się zapisać refleksji");
+      setSaving(false);
+      return;
+    }
+
     setSaving(false);
   }
 
   async function continueChallenge() {
-    // TODO: Create new challenge as continuation
     router.push("/challenge/discover");
   }
 
