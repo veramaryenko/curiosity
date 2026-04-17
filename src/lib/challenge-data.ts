@@ -1,32 +1,46 @@
-import type {
-  Challenge,
-  ChallengeStatus,
-  DailyTask,
-  MoodEntry,
-  MoodScore,
-} from "@/types";
+import type { Challenge, DailyTask, MoodEntry } from "@/types";
 import { getTodayDateString } from "@/lib/app-date";
 import { createClient } from "@/lib/supabase/server";
 
-interface DashboardData {
-  challenge: Pick<
-    Challenge,
-    "id" | "title" | "description" | "duration_days" | "status" | "start_date"
-  >;
-  task: Pick<
-    DailyTask,
-    | "id"
-    | "day_number"
-    | "description"
-    | "resource_url"
-    | "metric"
-    | "completed"
-    | "date"
-  >;
+type DashboardChallengeSummary = Pick<
+  Challenge,
+  "id" | "title" | "description" | "duration_days" | "status" | "start_date"
+>;
+
+type DashboardTaskSummary = Pick<
+  DailyTask,
+  | "id"
+  | "day_number"
+  | "description"
+  | "resource_url"
+  | "metric"
+  | "completed"
+  | "date"
+>;
+
+type DashboardTaskRecord = DashboardTaskSummary & Pick<DailyTask, "challenge_id">;
+
+type DashboardMoodEntrySummary = Pick<MoodEntry, "id" | "mood_score" | "note">;
+
+type DashboardMoodEntryRecord = DashboardMoodEntrySummary &
+  Pick<MoodEntry, "task_id">;
+
+export interface DashboardChallengeData {
+  challenge: DashboardChallengeSummary;
+  task: DashboardTaskSummary;
   completedCount: number;
   currentDay: number;
   progress: number;
-  moodEntry: Pick<MoodEntry, "id" | "mood_score" | "note"> | null;
+  moodEntry: DashboardMoodEntrySummary | null;
+  isComplete: boolean;
+}
+
+interface DashboardChallengeEntry {
+  challenge: DashboardChallengeSummary;
+  task: DashboardTaskRecord;
+  completedCount: number;
+  currentDay: number;
+  progress: number;
   isComplete: boolean;
 }
 
@@ -50,71 +64,160 @@ interface ChallengeDetailData {
   isComplete: boolean;
 }
 
-export async function getDashboardData(): Promise<DashboardData | null> {
+interface HistoryChallengeData {
+  challenge: Pick<
+    Challenge,
+    | "id"
+    | "title"
+    | "duration_days"
+    | "status"
+    | "start_date"
+    | "end_date"
+  >;
+  completedCount: number;
+  progress: number;
+}
+
+function selectDashboardTask(tasks: DashboardTaskRecord[], today: string) {
+  return (
+    tasks.find((candidate) => candidate.date === today) ??
+    tasks.find((candidate) => !candidate.completed) ??
+    tasks[tasks.length - 1]
+  );
+}
+
+export async function getDashboardData(): Promise<DashboardChallengeData[]> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) return [];
 
-  const { data: challenges, error: challengeError } = await supabase
+  const { data: rawChallenges, error: challengeError } = await supabase
     .from("challenges")
     .select("id, title, description, duration_days, status, start_date")
     .eq("user_id", user.id)
     .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(1);
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  const challenges = rawChallenges as DashboardChallengeSummary[] | null;
 
   if (challengeError || !challenges || challenges.length === 0) {
-    return null;
+    return [];
   }
 
-  const challenge = challenges[0];
-
-  const { data: tasks, error: tasksError } = await supabase
+  const challengeIds = challenges.map((challenge) => challenge.id);
+  const { data: rawTasks, error: tasksError } = await supabase
     .from("daily_tasks")
-    .select("id, day_number, description, resource_url, metric, completed, date")
-    .eq("challenge_id", challenge.id)
-    .order("day_number", { ascending: true });
+    .select(
+      "id, challenge_id, day_number, description, resource_url, metric, completed, date"
+    )
+    .in("challenge_id", challengeIds);
 
-  if (tasksError || !tasks || tasks.length === 0) {
-    return null;
+  if (tasksError) {
+    return [];
+  }
+
+  const tasks = (rawTasks ?? []) as DashboardTaskRecord[];
+  const tasksByChallengeId = new Map<string, DashboardTaskRecord[]>();
+
+  for (const task of tasks) {
+    const groupedTasks = tasksByChallengeId.get(task.challenge_id) ?? [];
+    groupedTasks.push(task);
+    tasksByChallengeId.set(task.challenge_id, groupedTasks);
   }
 
   const today = getTodayDateString();
-  const completedCount = tasks.filter((task) => task.completed).length;
-  const task =
-    tasks.find((candidate) => candidate.date === today) ??
-    tasks.find((candidate) => !candidate.completed) ??
-    tasks[tasks.length - 1];
+  const dashboardEntries = challenges
+    .map((challenge) => {
+      const challengeTasks = [...(tasksByChallengeId.get(challenge.id) ?? [])].sort(
+        (left, right) => left.day_number - right.day_number
+      );
 
-  const currentDay =
-    task?.day_number ?? Math.min(completedCount + 1, challenge.duration_days);
-  const progress =
-    challenge.duration_days > 0
-      ? (completedCount / challenge.duration_days) * 100
-      : 0;
-  const isComplete = completedCount >= challenge.duration_days;
+      if (challengeTasks.length === 0) {
+        return null;
+      }
 
-  const { data: moodEntry } = await supabase
-    .from("mood_entries")
-    .select("id, mood_score, note")
-    .eq("user_id", user.id)
-    .eq("task_id", task.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+      const task = selectDashboardTask(challengeTasks, today);
 
-  return {
-    challenge,
-    task,
-    completedCount,
-    currentDay,
-    progress,
-    moodEntry,
-    isComplete,
-  };
+      if (!task) {
+        return null;
+      }
+
+      const completedCount = challengeTasks.filter((candidate) => candidate.completed).length;
+      const currentDay = task.day_number;
+      const progress =
+        challenge.duration_days > 0
+          ? (completedCount / challenge.duration_days) * 100
+          : 0;
+      const isComplete = completedCount >= challenge.duration_days;
+
+      return {
+        challenge,
+        task,
+        completedCount,
+        currentDay,
+        progress,
+        isComplete,
+      };
+    })
+    .filter((entry): entry is DashboardChallengeEntry => entry !== null);
+
+  if (dashboardEntries.length === 0) {
+    return [];
+  }
+
+  const selectedTaskIds = dashboardEntries.map((entry) => entry.task.id);
+  const { data: rawMoodEntries, error: moodEntriesError } =
+    selectedTaskIds.length > 0
+      ? await supabase
+          .from("mood_entries")
+          .select("id, task_id, mood_score, note")
+          .eq("user_id", user.id)
+          .in("task_id", selectedTaskIds)
+          .order("created_at", { ascending: false })
+      : { data: [], error: null };
+
+  if (moodEntriesError) {
+    return [];
+  }
+
+  const moodEntries = (rawMoodEntries ?? []) as DashboardMoodEntryRecord[];
+  const moodEntryByTaskId = new Map<string, DashboardMoodEntrySummary>();
+
+  for (const moodEntry of moodEntries) {
+    if (moodEntryByTaskId.has(moodEntry.task_id)) {
+      continue;
+    }
+
+    moodEntryByTaskId.set(moodEntry.task_id, {
+      id: moodEntry.id,
+      mood_score: moodEntry.mood_score,
+      note: moodEntry.note,
+    });
+  }
+
+  const challengesWithMood: DashboardChallengeData[] = dashboardEntries.map((entry) => ({
+    challenge: entry.challenge,
+    task: {
+      id: entry.task.id,
+      day_number: entry.task.day_number,
+      description: entry.task.description,
+      resource_url: entry.task.resource_url,
+      metric: entry.task.metric,
+      completed: entry.task.completed,
+      date: entry.task.date,
+    },
+    completedCount: entry.completedCount,
+    currentDay: entry.currentDay,
+    progress: entry.progress,
+    moodEntry: moodEntryByTaskId.get(entry.task.id) ?? null,
+    isComplete: entry.isComplete,
+  }));
+
+  return challengesWithMood;
 }
 
 export async function getChallengeDetailData(
@@ -132,6 +235,7 @@ export async function getChallengeDetailData(
     .select("id, title, description, duration_days, status, start_date")
     .eq("id", challengeId)
     .eq("user_id", user.id)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (challengeError) {
@@ -172,93 +276,57 @@ export async function getChallengeDetailData(
   };
 }
 
-export interface HistoryItem {
-  id: string;
-  title: string;
-  duration_days: number;
-  completed_days: number;
-  status: ChallengeStatus;
-  start_date: string;
-  end_date: string;
-  overall_feeling: MoodScore | null;
-  wants_to_continue: boolean | null;
-}
-
-export async function getHistoryData(): Promise<HistoryItem[] | null> {
+export async function getHistoryData(): Promise<HistoryChallengeData[]> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) return [];
 
-  const { data: challenges, error: challengesError } = await supabase
+  const { data: challenges, error: challengeError } = await supabase
     .from("challenges")
     .select("id, title, duration_days, status, start_date, end_date")
     .eq("user_id", user.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
-  if (challengesError) {
-    throw new Error("Failed to load history.");
-  }
-
-  if (!challenges || challenges.length === 0) {
+  if (challengeError || !challenges || challenges.length === 0) {
     return [];
   }
 
-  const ids = challenges.map((c) => c.id);
-
+  const challengeIds = challenges.map((challenge) => challenge.id);
   const { data: tasks, error: tasksError } = await supabase
     .from("daily_tasks")
     .select("challenge_id, completed")
-    .in("challenge_id", ids);
+    .in("challenge_id", challengeIds);
 
   if (tasksError) {
-    throw new Error("Failed to load history.");
+    throw new Error("Failed to load challenge history tasks.");
   }
 
   const completedByChallenge = new Map<string, number>();
+
   for (const task of tasks ?? []) {
-    if (task.completed === true) {
-      completedByChallenge.set(
-        task.challenge_id,
-        (completedByChallenge.get(task.challenge_id) ?? 0) + 1
-      );
-    }
-  }
+    if (!task.completed) continue;
 
-  const { data: reflections, error: reflectionsError } = await supabase
-    .from("reflections")
-    .select("challenge_id, overall_feeling, wants_to_continue")
-    .in("challenge_id", ids);
-
-  if (reflectionsError) {
-    throw new Error("Failed to load history.");
-  }
-
-  const reflectionByChallenge = new Map<
-    string,
-    { overall_feeling: MoodScore | null; wants_to_continue: boolean | null }
-  >();
-  for (const reflection of reflections ?? []) {
-    reflectionByChallenge.set(reflection.challenge_id, {
-      overall_feeling: reflection.overall_feeling as MoodScore | null,
-      wants_to_continue: reflection.wants_to_continue,
-    });
+    completedByChallenge.set(
+      task.challenge_id,
+      (completedByChallenge.get(task.challenge_id) ?? 0) + 1
+    );
   }
 
   return challenges.map((challenge) => {
-    const reflection = reflectionByChallenge.get(challenge.id);
+    const completedCount = completedByChallenge.get(challenge.id) ?? 0;
+    const progress =
+      challenge.duration_days > 0
+        ? (completedCount / challenge.duration_days) * 100
+        : 0;
+
     return {
-      id: challenge.id,
-      title: challenge.title,
-      duration_days: challenge.duration_days,
-      completed_days: completedByChallenge.get(challenge.id) ?? 0,
-      status: challenge.status as ChallengeStatus,
-      start_date: challenge.start_date,
-      end_date: challenge.end_date,
-      overall_feeling: reflection?.overall_feeling ?? null,
-      wants_to_continue: reflection?.wants_to_continue ?? null,
+      challenge,
+      completedCount,
+      progress,
     };
   });
 }

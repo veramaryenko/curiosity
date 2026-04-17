@@ -1,11 +1,11 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
   const supabase = await createClient();
   const {
     data: { user },
@@ -15,27 +15,51 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Ownership check — RLS also enforces, but be explicit
-  const { data: challenge, error: fetchError } = await supabase
+  const { id } = await context.params;
+  const deletedAt = new Date().toISOString();
+
+  const { data: challenge, error: challengeLookupError } = await supabase
     .from("challenges")
     .select("id")
     .eq("id", id)
     .eq("user_id", user.id)
+    .is("deleted_at", null)
     .maybeSingle();
 
-  if (fetchError) {
-    return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
+  if (challengeLookupError) {
+    console.error(
+      "[DELETE /api/challenges/:id] lookup failed",
+      challengeLookupError
+    );
+    return NextResponse.json(
+      { error: "Failed to delete challenge" },
+      { status: 500 }
+    );
   }
 
   if (!challenge) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Challenge not found" }, { status: 404 });
   }
 
-  const { error } = await supabase.from("challenges").delete().eq("id", id);
+  const { error } = await supabase
+    .from("challenges")
+    .update({ deleted_at: deletedAt })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .is("deleted_at", null);
 
   if (error) {
-    return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
+    console.error("[DELETE /api/challenges/:id]", error);
+    return NextResponse.json(
+      { error: "Failed to delete challenge" },
+      { status: 500 }
+    );
   }
 
-  return NextResponse.json({ ok: true });
+  revalidatePath("/dashboard");
+  revalidatePath("/history");
+  revalidatePath(`/challenge/${id}`);
+  revalidatePath(`/challenge/${id}/summary`);
+
+  return NextResponse.json({ success: true });
 }

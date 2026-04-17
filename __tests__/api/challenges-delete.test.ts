@@ -1,67 +1,102 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetUser = vi.hoisted(() => vi.fn());
-const mockMaybeSingle = vi.hoisted(() => vi.fn());
-const mockDelete = vi.hoisted(() => vi.fn());
+const mockFrom = vi.hoisted(() => vi.fn());
+const mockRevalidatePath = vi.hoisted(() => vi.fn());
+
+vi.mock("next/cache", () => ({
+  revalidatePath: mockRevalidatePath,
+}));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(() =>
     Promise.resolve({
       auth: { getUser: mockGetUser },
-      from: (_table: string) => ({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: mockMaybeSingle,
-            }),
-          }),
-        }),
-        delete: () => ({
-          eq: mockDelete,
-        }),
-      }),
+      from: mockFrom,
     })
   ),
 }));
 
-// Import after mocks
 const { DELETE } = await import("@/app/api/challenges/[id]/route");
 
-function makeRequest() {
-  return new Request("http://localhost/api/challenges/abc", {
-    method: "DELETE",
-  });
+function makeContext(id = "challenge-1") {
+  return {
+    params: Promise.resolve({ id }),
+  };
 }
-
-function makeParams(id: string) {
-  return { params: Promise.resolve({ id }) };
-}
-
-const mockUser = { id: "user-1", email: "test@test.com" };
 
 describe("DELETE /api/challenges/[id]", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-  it("zwraca 401 gdy użytkownik niezalogowany", async () => {
+  it("returns 401 for unauthenticated users", async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
-    const res = await DELETE(makeRequest(), makeParams("abc"));
-    expect(res.status).toBe(401);
+
+    const response = await DELETE(new Request("http://localhost"), makeContext());
+
+    expect(response.status).toBe(401);
   });
 
-  it("zwraca 404 gdy wyzwanie nie istnieje", async () => {
-    mockGetUser.mockResolvedValue({ data: { user: mockUser } });
-    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
-    const res = await DELETE(makeRequest(), makeParams("abc"));
-    expect(res.status).toBe(404);
+  it("returns 404 when the challenge is already soft-deleted or missing", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+
+    const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    const update = vi.fn();
+
+    mockFrom.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            is: () => ({
+              maybeSingle,
+            }),
+          }),
+        }),
+      }),
+      update,
+    }));
+
+    const response = await DELETE(new Request("http://localhost"), makeContext());
+
+    expect(response.status).toBe(404);
+    expect(update).not.toHaveBeenCalled();
   });
 
-  it("zwraca 200 po udanym usunięciu", async () => {
-    mockGetUser.mockResolvedValue({ data: { user: mockUser } });
-    mockMaybeSingle.mockResolvedValue({ data: { id: "abc" }, error: null });
-    mockDelete.mockResolvedValue({ error: null });
-    const res = await DELETE(makeRequest(), makeParams("abc"));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.ok).toBe(true);
+  it("soft-deletes without selecting after the update", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { id: "challenge-1" },
+      error: null,
+    });
+    const updateIs = vi.fn().mockResolvedValue({ error: null });
+    const updateEqUser = vi.fn().mockReturnValue({ is: updateIs });
+    const updateEqId = vi.fn().mockReturnValue({ eq: updateEqUser });
+    const update = vi.fn().mockReturnValue({ eq: updateEqId });
+
+    mockFrom.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            is: () => ({
+              maybeSingle,
+            }),
+          }),
+        }),
+      }),
+      update,
+    }));
+
+    const response = await DELETE(new Request("http://localhost"), makeContext());
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ deleted_at: expect.any(String) })
+    );
+    expect(updateEqId).toHaveBeenCalledWith("id", "challenge-1");
+    expect(updateEqUser).toHaveBeenCalledWith("user_id", "user-1");
+    expect(updateIs).toHaveBeenCalledWith("deleted_at", null);
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/history");
   });
 });
