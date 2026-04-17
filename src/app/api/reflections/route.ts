@@ -51,6 +51,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  // Idempotency: if a reflection already exists, skip the AI call and return it.
+  // Prevents duplicates from double-clicks and keeps the response stable on retry.
+  const { data: existingReflection } = await supabase
+    .from("reflections")
+    .select("ai_insight")
+    .eq("challenge_id", challenge_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (existingReflection) {
+    return NextResponse.json({
+      insight: existingReflection.ai_insight ?? null,
+    });
+  }
+
   const { data: rawMoodEntries } = await supabase
     .from("mood_entries")
     .select("mood_score, note, daily_tasks(day_number)")
@@ -97,10 +112,15 @@ export async function POST(request: Request) {
     );
   }
 
-  await supabase
+  const { error: statusError } = await supabase
     .from("challenges")
     .update({ status: "completed" })
     .eq("id", challenge_id);
+
+  if (statusError) {
+    // Reflection is already saved — don't fail the request, just log.
+    console.error("Failed to mark challenge as completed:", statusError);
+  }
 
   return NextResponse.json({ insight: inserted.ai_insight ?? null });
 }

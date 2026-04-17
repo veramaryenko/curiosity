@@ -5,6 +5,7 @@ const mockGenerateInsight = vi.hoisted(() => vi.fn());
 const mockChallengeMaybeSingle = vi.hoisted(() => vi.fn());
 const mockMoodSelect = vi.hoisted(() => vi.fn());
 const mockReflectionInsert = vi.hoisted(() => vi.fn());
+const mockReflectionMaybeSingle = vi.hoisted(() => vi.fn());
 const mockChallengeUpdate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/ai", () => ({
@@ -44,6 +45,13 @@ vi.mock("@/lib/supabase/server", () => ({
         }
         if (table === "reflections") {
           return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: mockReflectionMaybeSingle,
+                }),
+              }),
+            }),
             insert: () => ({
               select: () => ({
                 single: mockReflectionInsert,
@@ -101,6 +109,7 @@ describe("POST /api/reflections", () => {
       data: { id: "ch-1", title: "Akwarele" },
       error: null,
     });
+    mockReflectionMaybeSingle.mockResolvedValue({ data: null, error: null });
     mockMoodSelect.mockResolvedValue({ data: [], error: null });
     mockGenerateInsight.mockResolvedValue("Świetna robota!");
     mockReflectionInsert.mockResolvedValue({
@@ -113,5 +122,25 @@ describe("POST /api/reflections", () => {
     const body = await res.json();
     expect(body).toEqual({ insight: "Świetna robota!" });
     expect(mockChallengeUpdate).toHaveBeenCalledWith({ status: "completed" });
+  });
+
+  it("zwraca istniejący insight bez wywołania AI gdy refleksja już istnieje", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: mockUser } });
+    mockChallengeMaybeSingle.mockResolvedValue({
+      data: { id: "ch-1", title: "Akwarele" },
+      error: null,
+    });
+    mockReflectionMaybeSingle.mockResolvedValue({
+      data: { ai_insight: "Poprzedni insight" },
+      error: null,
+    });
+
+    const res = await POST(makeRequest(validBody));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ insight: "Poprzedni insight" });
+    expect(mockGenerateInsight).not.toHaveBeenCalled();
+    expect(mockReflectionInsert).not.toHaveBeenCalled();
+    expect(mockChallengeUpdate).not.toHaveBeenCalled();
   });
 });
