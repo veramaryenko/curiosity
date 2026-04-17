@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,15 +30,66 @@ export default function SettingsPage() {
   const router = useRouter();
   const [reminderTime, setReminderTime] = useState("09:00");
   const [emailEnabled, setEmailEnabled] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPreferences() {
+      try {
+        const res = await fetch("/api/notification-preferences");
+        if (!res.ok) {
+          throw new Error("Failed to load");
+        }
+        const data = (await res.json()) as {
+          reminder_time: string;
+          email_enabled: boolean;
+        };
+        if (!cancelled) {
+          setReminderTime(data.reminder_time);
+          setEmailEnabled(data.email_enabled);
+        }
+      } catch {
+        if (!cancelled) {
+          toast.error("Nie udało się wczytać preferencji");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadPreferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function savePreferences() {
     setSaving(true);
-    // TODO: Save to Supabase
-    await new Promise((r) => setTimeout(r, 500));
-    setSaving(false);
+    try {
+      const res = await fetch("/api/notification-preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reminder_time: reminderTime,
+          email_enabled: emailEnabled,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to save");
+      }
+      toast.success("Zapisano");
+    } catch {
+      toast.error("Nie udało się zapisać preferencji");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function deleteAccount() {
@@ -89,6 +140,7 @@ export default function SettingsPage() {
               id="email-enabled"
               checked={emailEnabled}
               onCheckedChange={(checked) => setEmailEnabled(checked === true)}
+              disabled={loading}
             />
             <Label htmlFor="email-enabled">
               Przypomnienia emailowe o dziennym zadaniu
@@ -103,11 +155,12 @@ export default function SettingsPage() {
                 value={reminderTime}
                 onChange={(e) => setReminderTime(e.target.value)}
                 className="w-32"
+                disabled={loading}
               />
             </div>
           )}
-          <Button onClick={savePreferences} disabled={saving}>
-            {saving ? "Zapisuję..." : "Zapisz"}
+          <Button onClick={savePreferences} disabled={loading || saving}>
+            {saving ? "Zapisuję..." : loading ? "Wczytuję..." : "Zapisz"}
           </Button>
         </CardContent>
       </Card>
