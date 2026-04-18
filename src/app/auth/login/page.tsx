@@ -84,86 +84,90 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center px-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <Link href="/" className="mb-2 text-xl font-semibold text-primary">
-            Curiosity
-          </Link>
-          <CardTitle>
-            {step === "email" ? "Zaloguj się" : "Wpisz kod"}
-          </CardTitle>
-          <CardDescription>
-            {step === "email"
-              ? "Podaj email — wyślemy Ci kod logowania"
-              : `Wysłaliśmy 6-cyfrowy kod na ${email}`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {step === "email" ? (
-            <form onSubmit={handleSendCode} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="twoj@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoFocus
-                />
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Wysyłam..." : "Wyślij kod"}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyCode} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="code">Kod z maila</Label>
-                <Input
-                  id="code"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  autoComplete="one-time-code"
-                  maxLength={10}
-                  placeholder="12345678"
-                  value={code}
-                  onChange={(e) =>
-                    setCode(e.target.value.replace(/\D/g, "").slice(0, 10))
-                  }
-                  required
-                  autoFocus
-                />
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={loading || code.length < 6}
-              >
-                {loading ? "Sprawdzam..." : "Zaloguj się"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full"
-                onClick={() => {
-                  setStep("email");
-                  setCode("");
-                  setError(null);
-                }}
-                disabled={loading}
-              >
-                Wróć i zmień email
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
+    <div className="flex min-h-dvh flex-col">
+      <header className="flex items-center px-4 py-4 sm:px-8">
+        <Link href="/" className="text-xl font-semibold text-primary">
+          Curiosity
+        </Link>
+      </header>
+      <div className="flex flex-1 items-center justify-center px-4 pb-8">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            <CardTitle>
+              {step === "email" ? "Zaloguj się" : "Wpisz kod"}
+            </CardTitle>
+            <CardDescription>
+              {step === "email"
+                ? "Podaj email — wyślemy Ci kod logowania"
+                : `Wysłaliśmy 6-cyfrowy kod na ${email}`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {step === "email" ? (
+              <form onSubmit={handleSendCode} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="twoj@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+                {error && <p className="text-sm text-destructive">{error}</p>}
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Wysyłam..." : "Wyślij kod"}
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyCode} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="code">Kod z maila</Label>
+                  <Input
+                    id="code"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="one-time-code"
+                    maxLength={10}
+                    placeholder="12345678"
+                    value={code}
+                    onChange={(e) =>
+                      setCode(e.target.value.replace(/\D/g, "").slice(0, 10))
+                    }
+                    required
+                    autoFocus
+                  />
+                </div>
+                {error && <p className="text-sm text-destructive">{error}</p>}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={loading || code.length < 6}
+                >
+                  {loading ? "Sprawdzam..." : "Zaloguj się"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => {
+                    setStep("email");
+                    setCode("");
+                    setError(null);
+                  }}
+                  disabled={loading}
+                >
+                  Wróć i zmień email
+                </Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
