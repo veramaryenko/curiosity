@@ -89,6 +89,7 @@ export default function NewChallengePage() {
 
   async function startAIFlow() {
     setPlanMode("ai");
+    resetAIClarifyState();
     setGenerating(true);
     try {
       const res = await fetch("/api/ai/clarify-goal", {
@@ -103,21 +104,19 @@ export default function NewChallengePage() {
       };
       if (data.questions.length === 0) {
         setCategory(data.category);
-        setQuestions([]);
-        setAnswers({});
         // Skip clarify entirely.
         await generateWithAI({});
         return;
       }
       setCategory(data.category);
       setQuestions(data.questions);
-      setAnswers({});
       setStep("clarify");
     } catch {
       toast.error(
         "Nie udało się przygotować pytań. Spróbuj ponownie albo napisz plan ręcznie."
       );
       setPlanMode(null);
+      resetAIClarifyState();
     } finally {
       setGenerating(false);
     }
@@ -125,6 +124,12 @@ export default function NewChallengePage() {
 
   function setAnswer(id: string, value: string) {
     setAnswers((prev) => ({ ...prev, [id]: value }));
+  }
+
+  function resetAIClarifyState() {
+    setCategory(null);
+    setQuestions([]);
+    setAnswers({});
   }
 
   function allRequiredAnswered() {
@@ -443,6 +448,7 @@ export default function NewChallengePage() {
               onClick={() => {
                 if (generating) return;
                 setPlanMode(null);
+                resetAIClarifyState();
                 setStep("plan");
               }}
               disabled={generating}
@@ -518,7 +524,11 @@ export default function NewChallengePage() {
           <div className="flex gap-3">
             <Button
               variant="ghost"
-              onClick={() => setStep("plan")}
+              onClick={() => {
+                setPlanMode(null);
+                resetAIClarifyState();
+                setStep("plan");
+              }}
               disabled={saving}
               className="flex-1"
             >
