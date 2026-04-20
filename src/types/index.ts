@@ -60,6 +60,24 @@ export interface InterestSuggestion {
   estimated_minutes: number;
 }
 
+/**
+ * One clarifying question asked before the plan is generated, so the AI
+ * doesn't have to assume the user's starting point. Inspired by Duolingo's
+ * placement test and ChatGPT's clarifying-questions pattern.
+ */
+export interface ClarifyingQuestion {
+  id: string;
+  question: string;
+  type: "single" | "text";
+  options?: string[];
+  placeholder?: string;
+}
+
+export interface ClarifyGoalResult {
+  category: string;
+  questions: ClarifyingQuestion[];
+}
+
 /** One day in a discovery plan — concrete action + measurable goal. */
 export interface DiscoveryPlanTask {
   day: number;

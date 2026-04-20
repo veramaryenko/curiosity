@@ -14,9 +14,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import type { ClarifyingQuestion } from "@/types";
 
 type PlanMode = "ai" | "manual" | null;
+type Step = "goal" | "plan" | "clarify" | "review";
 
 interface TaskDraft {
   day: number;
@@ -26,7 +29,7 @@ interface TaskDraft {
 
 export default function NewChallengePage() {
   const router = useRouter();
-  const [step, setStep] = useState<"goal" | "plan" | "review">("goal");
+  const [step, setStep] = useState<Step>("goal");
 
   // Goal step
   const [title, setTitle] = useState("");
@@ -39,6 +42,11 @@ export default function NewChallengePage() {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Clarify step
+  const [category, setCategory] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<ClarifyingQuestion[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+
   function initEmptyTasks(numDays: number) {
     return Array.from({ length: numDays }, (_, i) => ({
       day: i + 1,
@@ -47,13 +55,18 @@ export default function NewChallengePage() {
     }));
   }
 
-  async function generateWithAI() {
+  async function generateWithAI(context: Record<string, string> = {}) {
     setGenerating(true);
     try {
       const res = await fetch("/api/ai/generate-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, duration_days: days }),
+        body: JSON.stringify({
+          title,
+          description,
+          duration_days: days,
+          context,
+        }),
       });
       if (!res.ok) throw new Error();
       const { tasks: generated } = await res.json();
@@ -72,6 +85,57 @@ export default function NewChallengePage() {
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function startAIFlow() {
+    setPlanMode("ai");
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/ai/clarify-goal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description }),
+      });
+      if (!res.ok) throw new Error();
+      const data = (await res.json()) as {
+        category: string;
+        questions: ClarifyingQuestion[];
+      };
+      if (data.questions.length === 0) {
+        setCategory(data.category);
+        setQuestions([]);
+        setAnswers({});
+        // Skip clarify entirely.
+        await generateWithAI({});
+        return;
+      }
+      setCategory(data.category);
+      setQuestions(data.questions);
+      setAnswers({});
+      setStep("clarify");
+    } catch {
+      toast.error(
+        "Nie udało się przygotować pytań. Spróbuj ponownie albo napisz plan ręcznie."
+      );
+      setPlanMode(null);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function setAnswer(id: string, value: string) {
+    setAnswers((prev) => ({ ...prev, [id]: value }));
+  }
+
+  function allRequiredAnswered() {
+    return questions
+      .filter((q) => q.type === "single")
+      .every((q) => (answers[q.id] ?? "").trim().length > 0);
+  }
+
+  async function submitClarify(skip: boolean) {
+    const context = skip ? {} : answers;
+    await generateWithAI(context);
   }
 
   function startManual() {
@@ -163,6 +227,8 @@ export default function NewChallengePage() {
         <p className="text-muted-foreground">
           {step === "goal" && "Co chcesz spróbować?"}
           {step === "plan" && "Jak chcesz stworzyć plan?"}
+          {step === "clarify" &&
+            "Zanim ułożymy plan, dopowiedz parę rzeczy o sobie"}
           {step === "review" && "Twój plan — przejrzyj i dostosuj"}
         </p>
       </div>
@@ -237,15 +303,14 @@ export default function NewChallengePage() {
             }
             onClick={() => {
               if (generating) return;
-              setPlanMode("ai");
-              generateWithAI();
+              startAIFlow();
             }}
           >
             <CardHeader>
               <CardTitle className="text-lg">AI stworzy plan za mnie</CardTitle>
               <CardDescription>
-                Na podstawie Twojego celu przygotujemy plan krok po kroku —
-                od najprostszych zadań do trudniejszych.
+                Najpierw zadamy Ci kilka pytań, a potem przygotujemy plan krok
+                po kroku — od najprostszych zadań do trudniejszych.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -283,7 +348,122 @@ export default function NewChallengePage() {
             <div className="py-8 text-center">
               <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
               <p className="mt-3 text-sm text-muted-foreground">
-                AI przygotowuje Twój plan...
+                {planMode === "ai"
+                  ? "AI przygotowuje pytania..."
+                  : "AI przygotowuje Twój plan..."}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Step 2.5: Clarify */}
+      {step === "clarify" && (
+        <div className="space-y-4">
+          {category && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                Wykryliśmy:
+              </span>
+              <Badge variant="secondary">{category}</Badge>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {questions.map((q) => (
+              <Card key={q.id}>
+                <CardHeader>
+                  <CardTitle className="text-base">{q.question}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {q.type === "single" && q.options && (
+                    <div className="space-y-2">
+                      {q.options.map((option) => {
+                        const selected = answers[q.id] === option;
+                        return (
+                          <Card
+                            key={option}
+                            className={
+                              generating
+                                ? "opacity-50"
+                                : `cursor-pointer transition-all hover:shadow-sm ${
+                                    selected
+                                      ? "border-primary"
+                                      : "hover:border-primary/50"
+                                  }`
+                            }
+                            onClick={() => {
+                              if (generating) return;
+                              setAnswer(q.id, option);
+                            }}
+                          >
+                            <CardContent className="p-3 text-sm">
+                              {option}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {q.type === "text" && (
+                    <Textarea
+                      value={answers[q.id] ?? ""}
+                      onChange={(e) => setAnswer(q.id, e.target.value)}
+                      placeholder={q.placeholder ?? ""}
+                      rows={2}
+                      className="resize-none"
+                      disabled={generating}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Separator />
+
+          <div className="flex flex-col gap-2">
+            <Button
+              onClick={() => submitClarify(false)}
+              disabled={generating || !allRequiredAnswered()}
+              className="w-full"
+            >
+              {generating ? "AI układa plan..." : "Dalej"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => submitClarify(true)}
+              disabled={generating}
+              className="w-full"
+            >
+              Pomiń pytania
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (generating) return;
+                setPlanMode(null);
+                setStep("plan");
+              }}
+              disabled={generating}
+              className="w-full"
+            >
+              Wróć
+            </Button>
+          </div>
+
+          {!allRequiredAnswered() && !generating && (
+            <p className="text-center text-xs text-muted-foreground">
+              Odpowiedz na pytania z opcjami, żeby przejść dalej. Pytania
+              otwarte możesz pominąć.
+            </p>
+          )}
+
+          {generating && (
+            <div className="py-4 text-center">
+              <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+              <p className="mt-3 text-sm text-muted-foreground">
+                AI układa Twój plan...
               </p>
             </div>
           )}

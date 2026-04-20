@@ -1,5 +1,10 @@
 import Groq from "groq-sdk";
-import type { InterestSuggestion, DiscoveryPlanResult } from "@/types";
+import type {
+  ClarifyGoalResult,
+  ClarifyingQuestion,
+  DiscoveryPlanResult,
+  InterestSuggestion,
+} from "@/types";
 import { sanitizeResourceUrl } from "@/lib/resource-url";
 
 const groq = new Groq({
@@ -24,16 +29,125 @@ async function chat(content: string, maxTokens: number): Promise<string> {
   return completion.choices[0]?.message?.content ?? "";
 }
 
+/**
+ * Asks the LLM whether a goal is unambiguous enough to plan, and if not,
+ * returns 1-3 clarifying questions to ask the user first. Inspired by
+ * Duolingo's placement test and ChatGPT's "clarifying questions" pattern —
+ * we don't want to assume someone wanting to "start cycling" is learning
+ * from scratch when they may just want a riding habit.
+ *
+ * Returns an empty `questions` array when the goal is already specific
+ * enough to plan directly (e.g. "przeczytać 3 książki w 30 dni").
+ */
+export async function clarifyGoal(
+  title: string,
+  description: string
+): Promise<ClarifyGoalResult> {
+  const text = await chat(
+    `Jesteś doświadczonym trenerem w aplikacji Curiosity. Twoim zadaniem jest ZADAĆ pytania uzupełniające, ZANIM zaplanujesz wyzwanie — żeby plan trafił w realny poziom i potrzeby użytkownika.
+
+Cel użytkownika: "${title}"
+${description ? `Dodatkowy kontekst: "${description}"` : ""}
+
+=== ZASADY ===
+
+1. WYKRYJ KATEGORIĘ celu (np. "Jazda na rowerze", "Nauka języka", "Pisanie", "Bieganie", "Medytacja", "Gotowanie", "Programowanie", "Muzyka").
+
+2. OCEŃ WIELOZNACZNOŚĆ. Zadawaj pytania TYLKO jeśli bez nich plan może mocno chybić. Najczęstsze ryzyka:
+   - Niewiadomy POZIOM użytkownika (np. "zacząć jeździć rowerem" — może umieć od dawna, może nie umieć wcale; "nauczyć się angielskiego" — A1 czy B2)
+   - Niejasna INTENCJA (np. "rower" — rekreacja w weekend, dojazdy do pracy, dłuższe trasy)
+   - Brak kluczowego OGRANICZENIA (czas dziennie, sprzęt, kontuzje — TYLKO jeśli realnie może zmienić plan)
+
+3. JEŚLI cel JEST już konkretny (np. "przeczytać 3 książki w 30 dni", "napisać 200 słów dziennie", "10 pompek codziennie"), zwróć \`questions: []\`.
+
+4. JEŚLI użytkownik W OPISIE już podał poziom / intencję, NIE pytaj o to ponownie. Pytaj tylko o to, czego naprawdę nie wiesz.
+
+5. MAKSYMALNIE 3 pytania. Najczęściej 1-2 wystarczą. Każde pytanie musi REALNIE zmieniać plan, gdyby odpowiedź była inna.
+
+6. STYL pytań:
+   - Polski, ciepły, krótki, bez oceny
+   - Pierwsze pytanie najlepiej "single" (radio) z 3-5 opcjami pokrywającymi spektrum (zero / podstawy / średni / zaawansowany — ale dopasowane do tematu, nie generyczne)
+   - Drugie/trzecie może być "text" jeśli odpowiedź jest niuansowa
+   - Opcje mają opisywać RZECZYWISTOŚĆ użytkownika, nie sucho ("Nigdy nie jeździłam/em" — nie "Poziom 1")
+
+7. KAŻDE pytanie ma id (krótki, snake_case, np. "level", "intent", "constraint"), question, type ("single" lub "text"), opcjonalnie options (dla "single") lub placeholder (dla "text").
+
+=== ODPOWIEDŹ ===
+Zwróć TYLKO JSON, bez markdown, bez komentarzy:
+{
+  "category": "...",
+  "questions": [
+    {"id": "level", "question": "...", "type": "single", "options": ["...", "...", "..."]},
+    {"id": "intent", "question": "...", "type": "text", "placeholder": "np. ..."}
+  ]
+}
+
+Jeśli cel jest jednoznaczny: {"category": "...", "questions": []}`,
+    1024
+  );
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("AI did not return valid JSON");
+
+  const parsed = JSON.parse(jsonMatch[0]) as {
+    category?: unknown;
+    questions?: unknown;
+  };
+
+  const category =
+    typeof parsed.category === "string" && parsed.category.trim().length > 0
+      ? parsed.category.trim()
+      : "Nowe wyzwanie";
+
+  const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
+  const questions: ClarifyingQuestion[] = rawQuestions
+    .map((raw): ClarifyingQuestion | null => {
+      const q = raw as Record<string, unknown>;
+      const id = typeof q.id === "string" ? q.id.trim() : "";
+      const question = typeof q.question === "string" ? q.question.trim() : "";
+      const type = q.type === "single" || q.type === "text" ? q.type : null;
+      if (!id || !question || !type) return null;
+
+      if (type === "single") {
+        const options = Array.isArray(q.options)
+          ? q.options.filter(
+              (o): o is string => typeof o === "string" && o.trim().length > 0
+            )
+          : [];
+        if (options.length < 2) return null;
+        return { id, question, type, options };
+      }
+
+      const placeholder =
+        typeof q.placeholder === "string" ? q.placeholder.trim() : undefined;
+      return { id, question, type, placeholder };
+    })
+    .filter((q): q is ClarifyingQuestion => q !== null)
+    .slice(0, 3);
+
+  return { category, questions };
+}
+
 export async function generateChallengePlan(
   title: string,
   description: string,
-  durationDays: number
+  durationDays: number,
+  context?: Record<string, string>
 ): Promise<GeneratedTask[]> {
+  const contextEntries = context
+    ? Object.entries(context).filter(([, v]) => v && v.trim().length > 0)
+    : [];
+  const contextBlock = contextEntries.length
+    ? `\nOdpowiedzi użytkownika na pytania uzupełniające (TRAKTUJ JE JAKO PRAWDĘ — dopasuj poziom, intencję i progresję):\n${contextEntries
+        .map(([k, v]) => `- ${k}: ${v.trim()}`)
+        .join("\n")}\n`
+    : "";
+
   const text = await chat(
     `Jesteś doświadczonym trenerem i mentorem w aplikacji Curiosity. Tworzysz realistyczne, konkretne plany, które uczą przez działanie — nie przez bierne oglądanie materiałów.
 
 Użytkownik chce: "${title}"
-${description ? `Kontekst od użytkownika: "${description}"` : ""}
+${description ? `Kontekst od użytkownika: "${description}"` : ""}${contextBlock}
 Długość planu: ${durationDays} dni
 
 ZASADY (rygorystycznie):
@@ -44,7 +158,11 @@ ZASADY (rygorystycznie):
    - "wykonaj sekwencję: krok 1, krok 2, krok 3"
    Jeśli temat wymaga wiedzy (technika, forma), WPISZ ją bezpośrednio w opis zadania — użytkownik nie powinien musieć szukać nigdzie indziej, żeby zacząć.
 
-2. PROGRESJA. Pierwsze 2-3 dni mają niski próg (5-15 minut, łatwe) — ale nadal konkretne i praktyczne. Środek buduje umiejętność. Końcówka łączy elementy w większą całość lub zwiększa intensywność.
+2. PROGRESJA dopasowana do POZIOMU użytkownika z kontekstu (jeśli jest):
+   - Jeśli użytkownik startuje od ZERA / jest początkujący → pierwsze 2-3 dni niski próg (5-15 minut, łatwe), ale konkretne. NIE zaczynaj od ćwiczeń wymagających wcześniejszej umiejętności.
+   - Jeśli użytkownik UMIE już podstawy / jest średnio-zaawansowany → POMIŃ etap "od zera". Dzień 1 ma być od razu sensowną praktyką dopasowaną do poziomu (np. dla osoby która umie jeździć rowerem — krótka rozjazdówka, a nie "stań na rowerze i poczuj balans"). Nie marnuj dni na rzeczy, które user już umie.
+   - Środek buduje umiejętność. Końcówka łączy elementy lub zwiększa intensywność/dystans/trudność.
+   Jeśli kontekst nie precyzuje poziomu, ostrożnie załóż początkujący — ale NIE wstawiaj zadań typu "sprawdź czy umiesz X", "poznaj podstawy Y" jako osobnych dni; rób od razu mikro-praktykę.
 
 3. RÓŻNORODNOŚĆ. Nie powtarzaj tej samej struktury zadania każdego dnia. Każdy dzień to inny aspekt, inne ćwiczenie, albo nowy krok. Użytkownik ma czuć progres, a nie rutynę kopiuj-wklej.
 
