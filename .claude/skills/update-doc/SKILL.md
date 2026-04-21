@@ -47,6 +47,16 @@ The main agent does **orchestration and merging**, not raw analysis. Raw git out
 
 Launch the four workers **in parallel** in a single message (four Agent tool calls in one block). Then, after the draft is written, launch the verifier.
 
+### Rules every sub-agent prompt MUST include
+
+These rules are non-negotiable — paste them into every sub-agent prompt verbatim. They exist because past runs confabulated path prefixes, HTTP verbs, and "Critical" classifications.
+
+- **Repo-relative paths only.** No `/Users/...`, no accidental `src/` prefix on `supabase/` or root-level paths. If unsure, check with `Glob` or `Read` before writing the path.
+- **Verify before citing.** Any `file:line` reference, exported symbol name, or HTTP verb (`GET`/`POST`/`PATCH`/`DELETE`) must be confirmed by reading the file. If you cannot verify, mark the claim `(inferred, not fully verified)` or drop it.
+- **No invented journeys / routes / tables.** Only include things that actually exist in the repo at the current HEAD.
+- **Framework idioms are not risks.** Documented patterns like Supabase SSR's `try/catch` around cookie setters, `new URL()` parsing catches, or Next.js dynamic-route `params: Promise<...>` do NOT belong in the risk report. Something is a "Critical" risk only if it plausibly causes data loss, silent wrong results, security regression, or blocks shipping.
+- **Stay inside your scope.** change-historian reads git only, architecture-mapper reads source only, etc. Crossing lanes produces contradictions the main agent then has to reconcile.
+
 ### Sub-agent roster
 
 **change-historian** (subagent_type: `general-purpose`)
@@ -107,16 +117,21 @@ Launch the four workers **in parallel** in a single message (four Agent tool cal
 - Scope: TODOs, FIXMEs, HACKs, XXX markers, disabled features, skipped tests, obvious type/lint smells.
 - Tasks:
   - Grep `TODO|FIXME|HACK|XXX` across `src/`
-  - Note disabled/placeholder code paths
-  - Note skipped or failing tests if obvious from file content
+  - Note disabled/placeholder code paths (literal strings like "disabled", "stub", "mock", "chwilowo wylaczone")
+  - Note skipped or failing tests (`it.skip`, `test.skip`, `describe.skip`, `.only`)
   - Categorize: Critical / Tech debt / Nice-to-have
   - Each item: `file:line — description — why it's a risk`
+- Calibration (strict):
+  - **Critical** = plausible data loss, silent wrong results, security regression, or blocks shipping. Disabled user-visible features count. A suspicious-looking `catch {}` does NOT, by itself, count.
+  - **Tech debt** = works now but bites a future maintainer or degrades DX/UX (scaffold README, indistinguishable error messages, missing logs, generic 500s).
+  - **Nice-to-have** = polish, low-impact cleanup, style consistency.
+  - Explicitly OUT OF SCOPE: framework idioms (Supabase SSR cookie try/catch, `new URL()` parsing catches, intentional Next 16 `params: Promise<...>` awaits). If a pattern appears as the documented usage in `node_modules/<pkg>/dist/docs/` or examples, it is not a risk.
 - Output format:
   ```
   ## Risk report
 
   ### Critical
-  - file:line — <desc> — <why risk>
+  - <repo-relative-path>:<line> — <desc> — <why risk>
 
   ### Tech debt
   - ...
@@ -127,8 +142,9 @@ Launch the four workers **in parallel** in a single message (four Agent tool cal
 
 **stable-context-keeper** (subagent_type: `Explore`, thoroughness: "quick")
 - Scope: `package.json`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `.env.local.example`, `vercel.json`, and any obvious top-level config.
+- Skip condition: if the main agent knows that none of these files have a commit in the range since the last snapshot (from change-historian's filenames), the main agent MAY skip this sub-agent and inline a one-line "stable context unchanged" note. Saves a parallel slot for a near-guaranteed empty diff.
 - Tasks:
-  - Diff current metadata against what the previous snapshot claims
+  - Diff current metadata against what the previous snapshot claims (passed explicitly in the prompt)
   - Report only **what changed**; if unchanged, return `no changes since last snapshot` for that subsection
   - Capture tech stack versions, run/test commands, required env vars
 - Output format:
@@ -213,15 +229,22 @@ Do not paste sub-agent reports verbatim. Synthesize them into the template. Pres
 
 If a section would overflow, merge or drop lowest-signal items.
 
-### 4. Write snapshot (diffwise edit)
+### 4. Write snapshot (diffwise edit, unless migrating)
 
-Use `Edit` (not `Write`) on `.claude/PROJECT_STATE.md` where possible. Overwrite only if the file is being created from scratch or if the structure itself must change.
+Default: use `Edit` on `.claude/PROJECT_STATE.md` so stable sections stay byte-identical.
+
+**Template migration exception.** If the previous snapshot uses a template with fewer sections than the current one (e.g., v2 → v3 added `0. Mental model`, `5. User journeys`, `7. Glossary`), use `Write` for a full rewrite AND:
+- Map each previous section to its new counterpart verbatim where semantics match (do not rephrase for style).
+- Insert the new sections with fresh content from sub-agent reports.
+- Do not drop signal — if a previous bullet has no new home, attach it under the closest new section and flag `(migrated from v<N>)` inline.
 
 **Clarity rules — enforced:**
 - Every commit bullet uses format: `SHA — WHAT + WHY (user-facing or technical reason)`. Never bare `"refactored X"`.
 - Every architectural claim has a `file:line` reference when applicable.
 - Every non-obvious invariant has a `why it exists` clause.
 - Mark unverified claims with `(inferred, not fully verified)`.
+- Repo-relative paths only. No `/Users/...`. No stray `src/` prefix on `supabase/`, `__tests__/`, or root files.
+- HTTP verbs on route handlers must match the actual exports in `route.ts`.
 - No jargon in Mental model; that paragraph must make sense to a developer who has never seen the repo.
 
 ### 5. Template
@@ -298,21 +321,34 @@ Concrete, actionable tasks. Not vague aspirations.
 Unclear or inferred parts. Mark clearly what would falsify or confirm each.
 ```
 
-### 6. Run verifier
+### 6. Run verifier (mandatory — no skipping)
 
-Launch the verifier sub-agent with the draft. If red flags come back, fix them and re-run once. Cap at two verification rounds.
+Launch the verifier sub-agent with the draft. This step is required even when everything looks fine; its absence is itself a quality defect.
+
+- Sample ≥5 concrete claims (file:line, SHA, API name, invariant).
+- If red flags come back, fix in one follow-up edit pass, then re-run verifier once.
+- Cap: two verification rounds total.
+- If a red flag survives two rounds, do NOT silently drop it — move the claim to section 14 (Unknowns) with the verifier's note.
 
 ### 7. Archive history copy (mandatory)
 
-Copy the final snapshot to `.claude/history/PROJECT_STATE_<YYYY-MM-DD>.md`. If a file for today already exists, overwrite it (today's last run wins).
+Use Bash:
+```bash
+mkdir -p .claude/history && cp .claude/PROJECT_STATE.md .claude/history/PROJECT_STATE_$(date +%F).md
+```
 
-### 8. Report to user
+If a file for today already exists, the `cp` overwrites it (today's last run wins). Do not use the `Write` tool for the archive — it requires a prior `Read` on overwrite and the extra round-trip has no value here.
 
-Brief message:
-- Path to the updated file
-- Sections that changed (based on diffwise edits)
-- Key findings from change-historian and risk-scanner
-- Any verifier red flags that were resolved or are still open
+### 8. Report to user (structured)
+
+The report must include each of these lines — even "verifier: clean" counts as information:
+
+- **File:** `.claude/PROJECT_STATE.md` (and archive path)
+- **Template:** v<N>, migrated from v<M> if applicable
+- **Sections edited:** comma list of section numbers that actually changed vs. previous snapshot
+- **Change-historian summary:** one sentence on what shipped since last snapshot
+- **Risk-scanner summary:** counts per category (Critical / Tech debt / Nice-to-have), plus the top Critical item
+- **Verifier:** "clean" OR list of remaining red flags (after max 2 rounds)
 
 Do NOT commit automatically.
 
@@ -334,11 +370,13 @@ Do NOT commit automatically.
 - Mental model readable by a developer unfamiliar with the repo
 - Every commit bullet has a WHY clause
 - Every architectural claim has a file:line or is marked inferred
+- All paths are repo-relative (no `/Users/...`, no stray `src/` prefix)
+- HTTP verbs on route-handler claims match the actual `export async function <VERB>` names
 - SHAs are valid and recent
 - Per-section volume budgets respected
 - Frozen sections from previous snapshot not gratuitously rewritten
 - History copy written to `.claude/history/`
-- Verifier returned no unresolved red flags
+- Verifier ran AND its outcome is included in the user report (clean OR surviving red flags moved to §14)
 
 ---
 
