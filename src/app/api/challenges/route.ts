@@ -136,6 +136,10 @@ export async function POST(request: Request) {
     .single();
 
   if (challengeError || !challenge) {
+    console.error(
+      "[POST /api/challenges] challenge insert failed:",
+      challengeError
+    );
     return NextResponse.json(
       { error: "Failed to create challenge" },
       { status: 500 }
@@ -161,6 +165,10 @@ export async function POST(request: Request) {
     .insert(taskRows);
 
   if (tasksError) {
+    console.error(
+      "[POST /api/challenges] daily_tasks insert failed:",
+      tasksError
+    );
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     let rollbackError: { message?: string } | null = null;
