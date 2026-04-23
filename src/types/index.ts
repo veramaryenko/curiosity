@@ -1,5 +1,24 @@
 export type ChallengeStatus = "active" | "completed" | "abandoned";
 
+export interface VideoResource {
+  url: string;
+  title: string;
+  channel: string;
+  thumbnail: string | null;
+  published_at: string | null;
+}
+
+export interface ArticleResource {
+  url: string;
+  title: string;
+  source: string;
+}
+
+export interface Resources {
+  video?: VideoResource | null;
+  article?: ArticleResource | null;
+}
+
 export type MoodScore = 1 | 2 | 3 | 4 | 5;
 
 export interface Challenge {
@@ -20,11 +39,7 @@ export interface DailyTask {
   challenge_id: string;
   day_number: number;
   description: string;
-  resource_url: string | null;
-  /**
-   * Concrete, measurable goal for the day (e.g. "200 słów", "15 minut").
-   * Null for tasks created before the discovery-plan feature landed.
-   */
+  resources: Resources | null;
   metric: string | null;
   completed: boolean;
   date: string;
@@ -65,7 +80,7 @@ export interface DiscoveryPlanTask {
   day: number;
   description: string;
   metric: string | null;
-  resource_url: string | null;
+  resources: Resources | null;
 }
 
 /** Full plan returned by the discovery endpoint. */

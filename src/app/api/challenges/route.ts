@@ -2,13 +2,14 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { addDaysToDateString, getTodayDateString } from "@/lib/app-date";
-import { sanitizeResourceUrl } from "@/lib/resource-url";
+import { isHttpsUrl } from "@/lib/resource-url";
 import { createClient } from "@/lib/supabase/server";
+import type { Resources } from "@/types";
 
 interface TaskInput {
   day: number;
   description: string;
-  resource_url: string | null;
+  resources: Resources | null;
   metric?: string | null;
 }
 
@@ -36,6 +37,50 @@ function hasContiguousTaskDays(tasks: TaskInput[], durationDays: number) {
   return true;
 }
 
+function sanitizeResources(raw: unknown): Resources | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  let video = null;
+  let article = null;
+
+  if (r.video && typeof r.video === "object") {
+    const v = r.video as Record<string, unknown>;
+    if (
+      typeof v.url === "string" &&
+      isHttpsUrl(v.url) &&
+      typeof v.title === "string" &&
+      typeof v.channel === "string"
+    ) {
+      video = {
+        url: v.url,
+        title: v.title,
+        channel: v.channel,
+        thumbnail: typeof v.thumbnail === "string" && isHttpsUrl(v.thumbnail) ? v.thumbnail : null,
+        published_at: typeof v.published_at === "string" ? v.published_at : null,
+      };
+    }
+  }
+
+  if (r.article && typeof r.article === "object") {
+    const a = r.article as Record<string, unknown>;
+    if (
+      typeof a.url === "string" &&
+      isHttpsUrl(a.url) &&
+      typeof a.title === "string" &&
+      typeof a.source === "string"
+    ) {
+      article = {
+        url: a.url,
+        title: a.title,
+        source: a.source,
+      };
+    }
+  }
+
+  if (!video && !article) return null;
+  return { video, article };
+}
+
 function sanitizeTaskInput(task: unknown): TaskInput | null {
   if (!task || typeof task !== "object") {
     return null;
@@ -49,7 +94,7 @@ function sanitizeTaskInput(task: unknown): TaskInput | null {
     typeof rawTask.metric === "string" && rawTask.metric.trim().length > 0
       ? rawTask.metric.trim()
       : null;
-  const resource_url = sanitizeResourceUrl(rawTask.resource_url);
+  const resources = sanitizeResources(rawTask.resources);
 
   if (
     typeof rawDay !== "number" ||
@@ -66,7 +111,7 @@ function sanitizeTaskInput(task: unknown): TaskInput | null {
     day,
     description,
     metric,
-    resource_url,
+    resources,
   };
 }
 
@@ -149,7 +194,7 @@ export async function POST(request: Request) {
       challenge_id: challenge.id,
       day_number: t.day,
       description: t.description,
-      resource_url: t.resource_url ?? null,
+      resources: t.resources ?? null,
       metric: t.metric ?? null,
       completed: false,
       date: taskDate,

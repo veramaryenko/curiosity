@@ -1,35 +1,80 @@
 import Groq from "groq-sdk";
-import type { InterestSuggestion, DiscoveryPlanResult } from "@/types";
-import { sanitizeResourceUrl } from "@/lib/resource-url";
+import { chatWithGrounding } from "@/lib/gemini";
+import type { Resources, DiscoveryPlanResult } from "@/types";
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+let groq: Groq | null = null;
+function getGroq(): Groq {
+  if (!groq) groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  return groq;
+}
 
-// Llama 3.3 70B — dobra polska, szybki, darmowy
-const MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
 
 interface GeneratedTask {
   day: number;
   description: string;
-  resource_url: string | null;
+  resources: Resources | null;
 }
 
-async function chat(content: string, maxTokens: number): Promise<string> {
-  const completion = await groq.chat.completions.create({
-    model: MODEL,
-    max_tokens: maxTokens,
-    messages: [{ role: "user", content }],
-  });
-  return completion.choices[0]?.message?.content ?? "";
+function parseResources(raw: unknown): Resources | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  let video = null;
+  let article = null;
+
+  if (r.video && typeof r.video === "object") {
+    const v = r.video as Record<string, unknown>;
+    if (typeof v.url === "string" && typeof v.title === "string" && typeof v.channel === "string") {
+      video = {
+        url: v.url,
+        title: v.title,
+        channel: v.channel,
+        thumbnail: typeof v.thumbnail === "string" ? v.thumbnail : null,
+        published_at: typeof v.published_at === "string" ? v.published_at : null,
+      };
+    }
+  }
+
+  if (r.article && typeof r.article === "object") {
+    const a = r.article as Record<string, unknown>;
+    if (typeof a.url === "string" && typeof a.title === "string" && typeof a.source === "string") {
+      article = {
+        url: a.url,
+        title: a.title,
+        source: a.source,
+      };
+    }
+  }
+
+  if (!video && !article) return null;
+  return { video, article };
 }
+
+const RESOURCES_PROMPT = `
+3) resources — obiekt z opcjonalnymi polami video i article, albo null dla prostych zadań:
+
+{
+  "video": { "url": "...", "title": "...", "channel": "..." } | null,
+  "article": { "url": "...", "title": "...", "source": "..." } | null
+} | null
+
+ZASADY:
+- URL-e MUSZĄ pochodzić z REALNYCH wyników Google Search (masz włączony tool googleSearch — używaj go).
+- video.url to KONKRETNY film YouTube (format https://www.youtube.com/watch?v=... lub https://youtu.be/...).
+  Wybierz film z kanału z >10k subów, z dużą liczbą wyświetleń, nie starszy niż 5 lat.
+  Przy podobnej jakości — preferuj świeższe.
+- article.url to konkretny artykuł/poradnik z realnej strony (medium, blogi, dokumentacja).
+- Dla prostych zadań ("napisz 200 słów", "zrób 10 pompek") zwróć resources: null.
+- Dla zadań teoretycznych często wystarczy article bez video.
+- Dla zadań praktycznych ("jak zrobić X") daj video albo oba.
+- NIGDY nie zmyślaj URL-a. Jeśli nie znalazłeś dobrego wyniku — zwróć null dla danego pola.`;
 
 export async function generateChallengePlan(
   title: string,
   description: string,
   durationDays: number
 ): Promise<GeneratedTask[]> {
-  const text = await chat(
+  const { text } = await chatWithGrounding(
     `Jesteś doświadczonym trenerem i mentorem w aplikacji Curiosity. Tworzysz realistyczne, konkretne plany, które uczą przez działanie — nie przez bierne oglądanie materiałów.
 
 Użytkownik chce: "${title}"
@@ -38,46 +83,42 @@ Długość planu: ${durationDays} dni
 
 ZASADY (rygorystycznie):
 
-1. KONKRET zamiast ogólników. ZABRONIONE są zadania typu "obejrzyj filmik o X", "poczytaj o Y", "dowiedz się o Z" jako samodzielna treść. Każde zadanie MUSI jasno mówić CO fizycznie zrobić, z parametrami:
-   - "zrób 3 serie po 8 powtórzeń ćwiczenia A"
-   - "przez 10 minut napisz swobodne myśli na temat B"
-   - "wykonaj sekwencję: krok 1, krok 2, krok 3"
-   Jeśli temat wymaga wiedzy (technika, forma), WPISZ ją bezpośrednio w opis zadania — użytkownik nie powinien musieć szukać nigdzie indziej, żeby zacząć.
+1. KONKRET zamiast ogólników. Każde zadanie MUSI jasno mówić CO fizycznie zrobić, z parametrami.
 
-2. PROGRESJA. Pierwsze 2-3 dni mają niski próg (5-15 minut, łatwe) — ale nadal konkretne i praktyczne. Środek buduje umiejętność. Końcówka łączy elementy w większą całość lub zwiększa intensywność.
+2. PROGRESJA. Pierwsze 2-3 dni mają niski próg — ale nadal konkretne i praktyczne. Środek buduje umiejętność. Końcówka łączy elementy w większą całość.
 
-3. RÓŻNORODNOŚĆ. Nie powtarzaj tej samej struktury zadania każdego dnia. Każdy dzień to inny aspekt, inne ćwiczenie, albo nowy krok. Użytkownik ma czuć progres, a nie rutynę kopiuj-wklej.
+3. RÓŻNORODNOŚĆ. Nie powtarzaj tej samej struktury zadania każdego dnia.
 
-4. SAMOWYSTARCZALNOŚĆ. Opis zadania ma być pełną instrukcją. Po przeczytaniu użytkownik wie dokładnie: co, jak, ile razy, jak długo. Żadnego "zobacz jakieś źródło i wymyśl".
+4. SAMOWYSTARCZALNOŚĆ. Opis zadania ma być pełną instrukcją.
 
-5. BEZPIECZEŃSTWO — stosuj TYLKO jeśli temat wyzwania wprost dotyczy bólu, kontuzji, rehabilitacji, regeneracji po urazie lub stanu medycznego (np. "ból pleców", "kontuzja kolana", "rehabilitacja barku"). NIE stosuj tej zasady dla zwykłych tematów sportowych, fitness, jogi, nauki języka, hobby, kreatywności, produktywności itp. — tam żadne ostrzeżenia o bólu nie są potrzebne i są wręcz szkodliwe, bo wprowadzają niepokój bez powodu.
-   Jeśli (i tylko jeśli) temat faktycznie dotyczy bólu/kontuzji/rehabilitacji:
-   - W pierwszym zadaniu dnia 1 dodaj zdanie: "Uwaga: jeśli ból się nasila lub pojawiają się niepokojące objawy, przerwij i skonsultuj się z lekarzem lub fizjoterapeutą. Ten plan nie zastępuje porady specjalisty."
-   - Używaj delikatnych, bezpiecznych wersji ćwiczeń; zaczynaj od pozycji leżącej, oddechu, delikatnej mobilności — nie od "wzmacniania".
-   We wszystkich pozostałych przypadkach NIE wspominaj o bólu, lekarzu, fizjoterapeucie ani specjalistach.
+5. BEZPIECZEŃSTWO — stosuj TYLKO jeśli temat wprost dotyczy bólu, kontuzji lub rehabilitacji.
 
-6. CZAS. Każde zadanie realnie 10-30 minut. Oznacz czas w opisie tam gdzie to ma sens.
+6. CZAS. Każde zadanie realnie 10-30 minut.
 
-7. ZASOBY (resource_url). Dodawaj link TYLKO jeśli naprawdę znasz stabilne, darmowe źródło (np. konkretny kanał YouTube znanego twórcy, oficjalna strona organizacji). W razie wątpliwości użyj null. NIE wymyślaj linków — lepiej null.
-
-8. JĘZYK. Polski, ciepły, bez presji i bez ocen. Nie używaj emoji. Pisz w formie bezosobowej lub "ty" — spójnie w całym planie.
+7. JĘZYK. Polski, ciepły, bez presji.
+${RESOURCES_PROMPT}
 
 Odpowiedz TYLKO jako JSON array, bez markdown, bez komentarzy, bez \`\`\`:
-[{"day": 1, "description": "konkretny opis z instrukcją i parametrami", "resource_url": null lub "https://..."}, ...]`,
+[{"day": 1, "description": "...", "resources": {"video": {"url": "...", "title": "...", "channel": "..."}, "article": null} }, ...]`,
     4096
   );
 
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error("AI did not return valid JSON");
-  return JSON.parse(jsonMatch[0]);
+  const parsed = JSON.parse(jsonMatch[0]) as Array<Record<string, unknown>>;
+  return parsed.map((t) => ({
+    day: typeof t.day === "number" ? t.day : Number(t.day),
+    description: typeof t.description === "string" ? t.description.trim() : "",
+    resources: parseResources(t.resources),
+  }));
 }
 
 export async function reviewChallengePlan(
   title: string,
   tasks: { day: number; description: string }[]
-): Promise<{ day: number; description: string; resource_url: string | null }[]> {
-  const text = await chat(
-    `Jesteś doświadczonym trenerem w aplikacji Curiosity. Użytkownik sam napisał plan wyzwania "${title}". Twoje zadanie: ulepszyć go tak, aby był konkretny, bezpieczny i wykonalny bez szukania dodatkowych informacji.
+): Promise<{ day: number; description: string; resources: Resources | null }[]> {
+  const { text } = await chatWithGrounding(
+    `Jesteś doświadczonym trenerem w aplikacji Curiosity. Użytkownik sam napisał plan wyzwania "${title}". Twoje zadanie: ulepszyć go tak, aby był konkretny, bezpieczny i wykonalny.
 
 Plan użytkownika:
 ${tasks.map((t) => `Dzień ${t.day}: ${t.description}`).join("\n")}
@@ -86,33 +127,40 @@ ZASADY ulepszania:
 
 1. Zachowaj oryginalny zamysł i intencję każdego dnia. Nie zmieniaj tematyki — tylko doprecyzuj.
 
-2. Jeśli zadanie jest ogólnikowe ("poćwicz", "naucz się X"), uczyń je konkretnym: dodaj liczbę powtórzeń, czas trwania, wylistuj kroki. Opis ma być pełną instrukcją — użytkownik po przeczytaniu wie CO i JAK zrobić bez dodatkowych pytań.
+2. Jeśli zadanie jest ogólnikowe, uczyń je konkretnym: dodaj liczbę powtórzeń, czas trwania, wylistuj kroki.
 
-3. Jeśli zadanie to samo "obejrzyj filmik" / "poczytaj o", zastąp je (lub uzupełnij) konkretnym działaniem: ćwiczeniem, mini-praktyką, refleksją pisemną z prompt'em. Bierna konsumpcja bez działania jest zabroniona.
+3. Sprawdź progresję — pierwsze dni łatwe, potem trudniej.
 
-4. Sprawdź progresję — pierwsze dni łatwe, potem trudniej. Jeśli trzeba, popraw kolejność lub trudność.
+4. BEZPIECZEŃSTWO — tylko jeśli temat wprost dotyczy bólu lub kontuzji.
 
-5. BEZPIECZEŃSTWO — tylko jeśli temat wyzwania wprost dotyczy bólu, kontuzji, rehabilitacji lub stanu medycznego (np. "ból pleców", "kontuzja"), w zadaniu dnia 1 dodaj: "Uwaga: jeśli ból się nasila lub pojawiają się niepokojące objawy, przerwij i skonsultuj się ze specjalistą." i preferuj delikatne techniki. NIE dodawaj takich ostrzeżeń dla zwykłych tematów sportowych, fitness, jogi, nauki, hobby itp. — byłyby bez sensu.
-
-6. Resource_url dodawaj tylko dla stabilnych, znanych źródeł. W razie wątpliwości null.
-
-7. Polski, ciepły ton. Bez emoji.
+5. Polski, ciepły ton.
+${RESOURCES_PROMPT}
 
 Odpowiedz TYLKO jako JSON array, bez markdown, bez komentarzy:
-[{"day": 1, "description": "ulepszony, konkretny opis", "resource_url": null lub "https://..."}, ...]`,
+[{"day": 1, "description": "...", "resources": null}, ...]`,
     4096
   );
 
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error("AI did not return valid JSON");
-  return JSON.parse(jsonMatch[0]);
+  const parsed = JSON.parse(jsonMatch[0]) as Array<Record<string, unknown>>;
+  return parsed.map((t) => ({
+    day: typeof t.day === "number" ? t.day : Number(t.day),
+    description: typeof t.description === "string" ? t.description.trim() : "",
+    resources: parseResources(t.resources),
+  }));
 }
 
 export async function discoverInterests(
   freeText: string
-): Promise<InterestSuggestion[]> {
-  const text = await chat(
-    `Użytkownik aplikacji Curiosity napisał: "${freeText}"
+): Promise<import("@/types").InterestSuggestion[]> {
+  const completion = await getGroq().chat.completions.create({
+    model: GROQ_MODEL,
+    max_tokens: 1024,
+    messages: [
+      {
+        role: "user",
+        content: `Użytkownik aplikacji Curiosity napisał: "${freeText}"
 Curiosity pomaga ludziom odkrywać nowe zainteresowania przez codzienne mikro-zadania.
 
 Zaproponuj 4-5 konkretnych wyzwań które mógłby/mogłaby spróbować.
@@ -125,24 +173,16 @@ Zasady:
 
 Odpowiedz TYLKO jako JSON array, bez żadnego innego tekstu:
 [{"title":"...","description":"...","emoji":"...","estimated_minutes":15},...]`,
-    1024
-  );
+      },
+    ],
+  });
 
+  const text = completion.choices[0]?.message?.content ?? "";
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error("AI did not return valid JSON");
   return JSON.parse(jsonMatch[0]);
 }
 
-/**
- * Generates a full day-by-day plan directly from the user's free-text goal.
- * Unlike the onboarding flow (which first picks from 4-5 interest ideas), this
- * function skips the "ideas" step and produces the concrete plan in one call.
- *
- * The returned plan has, for every day:
- *   - a specific action + "why" in 1-2 sentences
- *   - a measurable metric (e.g. "200 słów", "2 km", "15 minut")
- *   - an optional resource_url restricted to YouTube/Google search links
- */
 export async function generateDiscoveryPlan(
   title: string,
   description: string,
@@ -158,65 +198,37 @@ ${description ? `OPIS: "${description}"` : ""}
 DŁUGOŚĆ: ${durationDays} dni
 
 === KROK 1: WYKRYJ KATEGORIĘ ===
-Najpierw rozpoznaj typ celu i dopasuj metryki:
-- pisanie / kreatywne → słowa lub znaki (np. "200 słów")
-- sport / ruch → kilometry, minuty, powtórzenia (np. "2 km", "10 pompek")
-- nauka języka → nowe słowa, zdania, minuty czytania (np. "10 nowych słów")
-- rysowanie / sztuka → liczba szkiców lub minuty (np. "3 szkice", "20 minut")
-- muzyka → minuty gry, akordy, utwory (np. "15 minut gry", "2 akordy")
-- programowanie / techniczne → ćwiczenia, linie kodu, tutoriale (np. "1 tutorial", "30 linii kodu")
-- medytacja / mindfulness → minuty praktyki (np. "10 minut")
-- gotowanie → przepisy, techniki (np. "1 przepis", "2 techniki")
-- czytanie → strony, rozdziały (np. "20 stron")
-- inne → zaproponuj sensowną mierzalną metrykę
-
-Zapisz kategorię jednym krótkim stringiem po polsku (np. "Pisanie kreatywne", "Bieganie", "Nauka języka").
+Najpierw rozpoznaj typ celu i dopasuj metryki (pisanie → słowa, sport → km/minuty, nauka języka → słowa/minuty, itd.)
+Zapisz kategorię jednym krótkim stringiem po polsku (np. "Pisanie kreatywne").
 
 === KROK 2: STRUKTURA PROGRESJI ===
-- Dzień 1 do ${warmupEnd}: ROZGRZEWKA — bardzo łatwo, mała metryka, żeby user poczuł sukces
+- Dzień 1 do ${warmupEnd}: ROZGRZEWKA — bardzo łatwo, mała metryka
 - Dzień ${warmupEnd + 1} do ${buildEnd}: BUDOWA NAWYKU — metryka rośnie ~30-50%
-- Dzień ${buildEnd + 1} do ${durationDays}: WYZWANIE — większe porcje, własny projekt, zastosowanie
-Każde zadanie ma zająć max 15-30 minut realnej pracy.
+- Dzień ${buildEnd + 1} do ${durationDays}: WYZWANIE — większe porcje, własny projekt
+Każde zadanie max 15-30 minut.
 
 === KROK 3: WYMAGANIA PER DZIEŃ ===
 Każdy dzień MUSI mieć trzy pola:
 
-1) description — konkretna akcja po polsku, 1-2 zdania, zawsze z krótkim "dlaczego":
-   DOBRZE: "Napisz 200 słów o głównym bohaterze — jego wygląd, charakter, największe marzenie. To fundament, bez niego fabuła się nie zadziała."
-   ŹLE: "Pomyśl o postaciach"
-   ŹLE: "Spróbuj coś napisać"
+1) description — konkretna akcja po polsku, 1-2 zdania z krótkim "dlaczego"
 
 2) metric — krótki, mierzalny cel (string, MAKSYMALNIE 5 słów):
-   DOBRZE: "200 słów", "15 minut", "3 szkice", "2 km", "10 nowych słów"
-   ŹLE: "trochę", "chwilkę", "kilka rzeczy", null
+   DOBRZE: "200 słów", "15 minut", "3 szkice"
    Metryki MUSZĄ rosnąć między rozgrzewką, budową nawyku i wyzwaniem.
-
-3) resource_url — link, TYLKO jeden z tych dwóch formatów, albo null:
-   - https://www.youtube.com/results?search_query=SŁOWA+PO+POLSKU
-   - https://www.google.com/search?q=SŁOWA+PO+POLSKU
-
-   ⚠️ ABSOLUTNIE ZAKAZANE są inne linki. W szczególności:
-   - ZAKAZ linków typu https://www.youtube.com/watch?v=XXXX
-   - ZAKAZ linków do konkretnych artykułów, kursów, stron (medium.com, blogi, itd.)
-   - ZAKAZ linków bez parametru search_query lub q
-   Linki do konkretnych treści SĄ ZAWSZE ZMYŚLONE i nie działają. User klika i trafia w pustkę.
-   Linki search zawsze działają, bo YouTube/Google same znajdą aktualne wyniki.
-
-   Preferuj YouTube search dla dni praktycznych ("jak zrobić X"), Google search dla teoretycznych.
-   Nie każdy dzień potrzebuje linku — dawaj resource_url tylko gdy user naprawdę potrzebuje zasobu (max 60% dni ma link, reszta to null).
+${RESOURCES_PROMPT}
 
 === ODPOWIEDŹ ===
 Odpowiedz TYLKO jako JSON (bez markdown, bez wstępu):
 {
   "category": "...",
   "tasks": [
-    {"day": 1, "description": "...", "metric": "...", "resource_url": "https://www.youtube.com/results?search_query=..." },
-    {"day": 2, "description": "...", "metric": "...", "resource_url": null},
+    {"day": 1, "description": "...", "metric": "...", "resources": {"video": {"url": "...", "title": "...", "channel": "..."}, "article": null} },
+    {"day": 2, "description": "...", "metric": "...", "resources": null},
     ...
   ]
 }`;
 
-  const text = await chat(prompt, 4096);
+  const { text } = await chatWithGrounding(prompt, 8192);
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("AI did not return valid JSON");
@@ -240,10 +252,10 @@ Odpowiedz TYLKO jako JSON (bez markdown, bez wstępu):
         typeof t.metric === "string" && t.metric.trim().length > 0
           ? t.metric.trim()
           : null;
-      const resource_url = sanitizeResourceUrl(t.resource_url);
+      const resources = parseResources(t.resources);
 
       if (!Number.isFinite(day) || day < 1 || !description) return null;
-      return { day, description, metric, resource_url };
+      return { day, description, metric, resources };
     })
     .filter((t): t is NonNullable<typeof t> => t !== null)
     .sort((a, b) => a.day - b.day);
@@ -270,8 +282,13 @@ export async function generateReflectionInsight(
     obstacles: string;
   }
 ): Promise<string> {
-  return chat(
-    `Jesteś empatycznym asystentem w aplikacji Curiosity. Użytkownik właśnie ukończył wyzwanie "${challengeTitle}".
+  const completion = await getGroq().chat.completions.create({
+    model: GROQ_MODEL,
+    max_tokens: 512,
+    messages: [
+      {
+        role: "user",
+        content: `Jesteś empatycznym asystentem w aplikacji Curiosity. Użytkownik właśnie ukończył wyzwanie "${challengeTitle}".
 
 Wpisy nastrojów:
 ${moodEntries.map((e) => `Dzień ${e.day}: ${e.mood_score}/5${e.note ? ` — "${e.note}"` : ""}`).join("\n")}
@@ -283,6 +300,9 @@ Refleksja końcowa:
 - Przeszkody: ${reflection.obstacles}
 
 Napisz krótki (2-3 zdania), ciepły i wspierający insight. Zwróć uwagę na wzorce w nastrojach. Nie oceniaj, nie dawaj rad — po prostu pokaż co zauważasz. Pisz po polsku.`,
-    512
-  );
+      },
+    ],
+  });
+
+  return completion.choices[0]?.message?.content ?? "";
 }

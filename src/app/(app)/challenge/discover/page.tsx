@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ResourceCard } from "@/components/resource-card";
 import type { DiscoveryPlanTask } from "@/types";
 
 type Step = "goal" | "duration" | "plan";
@@ -41,7 +42,7 @@ export default function DiscoverPage() {
 
   function updateTask(
     index: number,
-    field: "description" | "metric" | "resource_url",
+    field: "description" | "metric",
     value: string
   ) {
     setTasks((prev) => {
@@ -105,7 +106,7 @@ export default function DiscoverPage() {
             day: t.day,
             description: t.description,
             metric: t.metric,
-            resource_url: t.resource_url,
+            resources: t.resources,
           })),
         }),
       });
@@ -295,33 +296,18 @@ export default function DiscoverPage() {
                       className="resize-none"
                     />
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor={`task-metric-${task.day}`}>
-                        Mierzalny cel
-                      </Label>
-                      <Input
-                        id={`task-metric-${task.day}`}
-                        value={task.metric ?? ""}
-                        onChange={(e) => updateTask(index, "metric", e.target.value)}
-                        placeholder="np. 15 minut, 3 szkice"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`task-resource-${task.day}`}>
-                        Link pomocniczy
-                      </Label>
-                      <Input
-                        id={`task-resource-${task.day}`}
-                        value={task.resource_url ?? ""}
-                        onChange={(e) =>
-                          updateTask(index, "resource_url", e.target.value)
-                        }
-                        placeholder="https://..."
-                        type="url"
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`task-metric-${task.day}`}>
+                      Mierzalny cel
+                    </Label>
+                    <Input
+                      id={`task-metric-${task.day}`}
+                      value={task.metric ?? ""}
+                      onChange={(e) => updateTask(index, "metric", e.target.value)}
+                      placeholder="np. 15 minut, 3 szkice"
+                    />
                   </div>
+                  <ResourceCard resources={task.resources} />
                 </CardContent>
               </Card>
             ))}
