@@ -20,7 +20,7 @@ create table public.daily_tasks (
   challenge_id uuid references public.challenges(id) on delete cascade not null,
   day_number integer not null,
   description text not null,
-  resource_url text,
+  resources jsonb default null,
   metric text,
   completed boolean default false not null,
   date date not null

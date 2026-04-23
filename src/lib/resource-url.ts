@@ -1,24 +1,20 @@
-/**
- * Allow only deterministic search URLs. This avoids storing arbitrary external
- * links while still letting plans point users to safe search results.
- */
-export function sanitizeResourceUrl(url: unknown): string | null {
-  if (typeof url !== "string" || url.length === 0) return null;
-
+export function isHttpsUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
   try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.replace(/^www\./, "");
-
-    if (host === "youtube.com" && parsed.pathname === "/results") {
-      return parsed.toString();
-    }
-
-    if (host === "google.com" && parsed.pathname === "/search") {
-      return parsed.toString();
-    }
-
-    return null;
+    return new URL(value).protocol === "https:";
   } catch {
-    return null;
+    return false;
+  }
+}
+
+export function isYoutubeUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const u = new URL(value);
+    if (u.protocol !== "https:") return false;
+    const host = u.hostname.replace(/^www\./, "");
+    return host === "youtube.com" || host === "youtu.be";
+  } catch {
+    return false;
   }
 }

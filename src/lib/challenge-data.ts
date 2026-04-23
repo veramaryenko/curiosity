@@ -12,7 +12,7 @@ type DashboardTaskSummary = Pick<
   | "id"
   | "day_number"
   | "description"
-  | "resource_url"
+  | "resources"
   | "metric"
   | "completed"
   | "date"
@@ -54,7 +54,7 @@ interface ChallengeDetailData {
     | "id"
     | "day_number"
     | "description"
-    | "resource_url"
+    | "resources"
     | "metric"
     | "completed"
     | "date"
@@ -112,7 +112,7 @@ export async function getDashboardData(): Promise<DashboardChallengeData[]> {
   const { data: rawTasks, error: tasksError } = await supabase
     .from("daily_tasks")
     .select(
-      "id, challenge_id, day_number, description, resource_url, metric, completed, date"
+      "id, challenge_id, day_number, description, resources, metric, completed, date"
     )
     .in("challenge_id", challengeIds);
 
@@ -205,7 +205,7 @@ export async function getDashboardData(): Promise<DashboardChallengeData[]> {
       id: entry.task.id,
       day_number: entry.task.day_number,
       description: entry.task.description,
-      resource_url: entry.task.resource_url,
+      resources: entry.task.resources,
       metric: entry.task.metric,
       completed: entry.task.completed,
       date: entry.task.date,
@@ -248,7 +248,7 @@ export async function getChallengeDetailData(
 
   const { data: tasks, error: tasksError } = await supabase
     .from("daily_tasks")
-    .select("id, day_number, description, resource_url, metric, completed, date")
+    .select("id, day_number, description, resources, metric, completed, date")
     .eq("challenge_id", challenge.id)
     .order("day_number", { ascending: true });
 

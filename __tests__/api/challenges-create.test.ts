@@ -37,8 +37,22 @@ const validBody = {
   description: "Opis",
   duration_days: 2,
   tasks: [
-    { day: 1, description: "Dzien 1", resource_url: null, metric: null },
-    { day: 2, description: "Dzien 2", resource_url: null, metric: null },
+    {
+      day: 1,
+      description: "Dzien 1",
+      resources: {
+        video: {
+          url: "https://www.youtube.com/watch?v=abc",
+          title: "Tytuł",
+          channel: "Kanał",
+          thumbnail: null,
+          published_at: null,
+        },
+        article: { url: "https://example.com/art", title: "Artykuł", source: "example.com" },
+      },
+      metric: null,
+    },
+    { day: 2, description: "Dzien 2", resources: null, metric: null },
   ],
 };
 

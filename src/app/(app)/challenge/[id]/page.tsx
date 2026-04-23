@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { TaskCheckbox } from "@/components/task-checkbox";
+import { ResourceCard } from "@/components/resource-card";
 import { getChallengeDetailData } from "@/lib/challenge-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,16 +81,7 @@ export default async function ChallengeDetailPage({
                   >
                     {task.description}
                   </p>
-                  {task.resource_url && (
-                    <a
-                      href={task.resource_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary underline underline-offset-2"
-                    >
-                      Material pomocniczy
-                    </a>
-                  )}
+                  <ResourceCard resources={task.resources} />
                 </div>
               </CardContent>
             </Card>
