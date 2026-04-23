@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { addDaysToDateString, getTodayDateString } from "@/lib/app-date";
-import { isHttpsUrl } from "@/lib/resource-url";
+import { isHttpsUrl, isYoutubeUrl } from "@/lib/resource-url";
 import { createClient } from "@/lib/supabase/server";
 import type { Resources } from "@/types";
 
@@ -47,7 +47,7 @@ function sanitizeResources(raw: unknown): Resources | null {
     const v = r.video as Record<string, unknown>;
     if (
       typeof v.url === "string" &&
-      isHttpsUrl(v.url) &&
+      isYoutubeUrl(v.url) &&
       typeof v.title === "string" &&
       typeof v.channel === "string"
     ) {

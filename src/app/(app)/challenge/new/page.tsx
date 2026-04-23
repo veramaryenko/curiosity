@@ -391,12 +391,13 @@ export default function NewChallengePage() {
                         <p className="text-xs font-medium">Film (opcjonalny)</p>
                         <button
                           type="button"
-                          onClick={() => {
-                            updateTask(i, "showVideo", false);
-                            updateTask(i, "video_url", "");
-                            updateTask(i, "video_title", "");
-                            updateTask(i, "video_channel", "");
-                          }}
+                          onClick={() =>
+                            setTasks((prev) => {
+                              const updated = [...prev];
+                              updated[i] = { ...updated[i], showVideo: false, video_url: "", video_title: "", video_channel: "" };
+                              return updated;
+                            })
+                          }
                           className="text-xs text-muted-foreground hover:text-foreground"
                         >
                           usuń
@@ -435,12 +436,13 @@ export default function NewChallengePage() {
                         <p className="text-xs font-medium">Artykuł (opcjonalny)</p>
                         <button
                           type="button"
-                          onClick={() => {
-                            updateTask(i, "showArticle", false);
-                            updateTask(i, "article_url", "");
-                            updateTask(i, "article_title", "");
-                            updateTask(i, "article_source", "");
-                          }}
+                          onClick={() =>
+                            setTasks((prev) => {
+                              const updated = [...prev];
+                              updated[i] = { ...updated[i], showArticle: false, article_url: "", article_title: "", article_source: "" };
+                              return updated;
+                            })
+                          }
                           className="text-xs text-muted-foreground hover:text-foreground"
                         >
                           usuń

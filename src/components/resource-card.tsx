@@ -1,5 +1,5 @@
 import Image from "next/image";
-import type { Resources } from "@/types";
+import type { VideoResource, Resources } from "@/types";
 
 interface Props {
   resources: Resources | null;
@@ -18,44 +18,46 @@ function youtubeIdFromUrl(url: string): string | null {
   return null;
 }
 
+function VideoCard({ video }: { video: VideoResource }) {
+  const videoId = youtubeIdFromUrl(video.url);
+  const thumbnail =
+    video.thumbnail ?? (videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null);
+
+  return (
+    <a
+      href={video.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group flex gap-3 rounded-lg border border-border p-2 hover:border-primary/50 transition-colors"
+    >
+      {thumbnail && (
+        <Image
+          src={thumbnail}
+          alt=""
+          width={112}
+          height={64}
+          className="rounded object-cover flex-shrink-0"
+          unoptimized
+        />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium line-clamp-2 group-hover:text-primary">
+          {video.title}
+        </p>
+        <p className="text-xs text-muted-foreground truncate">
+          YouTube · {video.channel}
+        </p>
+      </div>
+    </a>
+  );
+}
+
 export function ResourceCard({ resources }: Props) {
   if (!resources || (!resources.video && !resources.article)) return null;
 
   return (
     <div className="space-y-2">
-      {resources.video && (() => {
-        const video = resources.video!;
-        const videoId = youtubeIdFromUrl(video.url);
-        const thumbnail =
-          video.thumbnail ?? (videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null);
-        return (
-          <a
-            href={video.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group flex gap-3 rounded-lg border border-border p-2 hover:border-primary/50 transition-colors"
-          >
-            {thumbnail && (
-              <Image
-                src={thumbnail}
-                alt=""
-                width={112}
-                height={64}
-                className="rounded object-cover flex-shrink-0"
-                unoptimized
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium line-clamp-2 group-hover:text-primary">
-                {video.title}
-              </p>
-              <p className="text-xs text-muted-foreground truncate">
-                YouTube · {video.channel}
-              </p>
-            </div>
-          </a>
-        );
-      })()}
+      {resources.video && <VideoCard video={resources.video} />}
       {resources.article && (
         <a
           href={resources.article.url}
