@@ -112,7 +112,12 @@ export default function NewChallengePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, description, duration_days: days }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(body.error ?? "Nie udało się wygenerować planu. Spróbuj ponownie albo napisz plan ręcznie.");
+        setPlanMode(null);
+        return;
+      }
       const { tasks: generated } = await res.json();
       setTasks(
         generated.map((t: { day: number; description: string; resources: Resources | null }) => ({
@@ -198,7 +203,11 @@ export default function NewChallengePage() {
           })),
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(body.error ?? "Nie udało się sprawdzić planu. Spróbuj ponownie.");
+        return;
+      }
       const { tasks: reviewed } = await res.json();
       setTasks((prev) =>
         reviewed.map((t: { day: number; description: string; resources: Resources | null }, i: number) => ({

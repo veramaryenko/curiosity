@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateChallengePlan } from "@/lib/ai";
+import { GeminiUnavailableError } from "@/lib/gemini";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -21,7 +22,13 @@ export async function POST(request: Request) {
   try {
     const tasks = await generateChallengePlan(title, description || "", duration_days);
     return NextResponse.json({ tasks });
-  } catch {
+  } catch (err) {
+    if (err instanceof GeminiUnavailableError) {
+      return NextResponse.json(
+        { error: "Spróbuj za chwilę — AI jest teraz bardzo obciążone." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { error: "Failed to generate plan" },
       { status: 500 }
