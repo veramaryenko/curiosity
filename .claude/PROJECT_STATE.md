@@ -1,155 +1,170 @@
 # PROJECT_STATE
 
-_Last updated: 2026-04-16 by /update-doc on branch `fix-real-dashboard-data` at commit `a732cf0`._
+_Last updated: 2026-04-21 by /update-doc on branch `main` at commit `27e7ea8`._
+
+## 0. Mental model
+
+Curiosity is a Polish-language "weekend-warrior" habit app: a user describes a goal, AI breaks it into 7–30 concrete daily tasks, and each day the dashboard shows today's task with a one-tap completion toggle and optional mood check-in. Behind the scenes, a Next 16 request gate (`src/proxy.ts`) authenticates every request via Supabase SSR, page handlers read/write Supabase tables (`challenges`, `daily_tasks`, `mood_entries`) with soft-delete as the visibility boundary, and a once-a-day Vercel cron emails users who haven't completed today's task. Groq (`llama-3.3-70b-versatile`) generates plans and end-of-challenge reflection insights; Resend sends email.
 
 ## 1. Project overview
 
-Curiosity is a Polish-language web app for lightweight habit and interest exploration through short daily challenges. A user describes a goal, the app can generate a structured day-by-day plan with AI, stores the challenge in Supabase, shows one task per day on the dashboard, lets the user track completion plus an optional mood check-in, and now loads dashboard, detail, and history views from persisted data instead of mock state.
+Curiosity helps users explore interests and build small habits through short, time-boxed challenges. A user describes a goal, the app generates a structured day-by-day plan, stores challenge + tasks in Supabase, shows one task per day on the dashboard, tracks completion with optional mood, supports soft-deleted archival via history, and sends daily email reminders. All user-facing copy is Polish; code identifiers stay English.
 
 ## 2. Tech stack
 
-- Framework: Next.js `16.2.3` (App Router, with framework-specific breaking changes noted in `AGENTS.md`)
-- Runtime: React `19.2.4`, TypeScript `^5`, Node (types `^20`)
+- Framework: Next.js `16.2.3` (App Router; breaking changes vs typical Next — see `AGENTS.md`)
+- Runtime: React `19.2.4`, TypeScript `^5`, `@types/node` `^20`
 - Styling/UI: Tailwind CSS v4, `@base-ui/react`, `lucide-react`, `sonner`, `next-themes`
-- Auth + DB: Supabase SSR + Supabase JS, Row Level Security enabled
-- AI: Groq SDK with `llama-3.3-70b-versatile`
-- Email: Resend
-- Testing: Vitest + Testing Library + jsdom
+- Auth + DB: Supabase SSR (`@supabase/ssr` `^0.10.2`) + `@supabase/supabase-js` `^2.103.3`, RLS enabled
+- AI: Groq SDK `^1.1.2` with model `llama-3.3-70b-versatile`
+- Email: Resend `^6.10.0`
+- Testing: Vitest `^4.1.4` + Testing Library + jsdom
 - Hosting/ops: Vercel, cron via `vercel.json`
 
 ## 3. Repository map
 
-- `src/app/` - App Router pages and route handlers
-- `src/app/api/` - Backend endpoints for account, AI flows, challenges, mood entries, task updates, delete flow, and cron reminders
-- `src/components/` - Feature components and `ui/` primitives
-- `src/lib/` - AI prompts, challenge/dashboard/history data loading, date helpers, resource URL sanitization, email, utils, Supabase helpers
-- `src/proxy.ts` - Next 16 request gate replacing legacy middleware
-- `src/types/index.ts` - Domain types for challenges, tasks, mood entries, reflections, AI outputs
-- `supabase/schema.sql` - Base schema with RLS policies
-- `supabase/migrations/` - Incremental schema updates, including newer task metric and soft-delete support
-- `__tests__/` - Vitest suites for API, components, and library code
-- `docs/` - Product and UI audit notes
-- `specs/` - Product specs and planning docs
-- `.claude/skills/update-doc/SKILL.md` - Manual snapshot workflow used for this file
+- `src/app/` — App Router pages and route handlers
+- `src/app/(app)/` — authenticated shell routes (dashboard, history, settings, challenge/*)
+- `src/app/api/` — backend endpoints: account, AI flows, challenges, mood entries, task updates, notification preferences, reflections, cron reminders
+- `src/components/` — feature components + `ui/` primitives
+- `src/lib/` — AI prompts, challenge/dashboard/history data loading, date helpers, resource URL sanitization, email, Supabase helpers
+- `src/proxy.ts` — Next 16 request gate (replaces legacy `middleware.ts`)
+- `src/types/index.ts` — domain types
+- `supabase/schema.sql` — base schema + RLS policies
+- `supabase/migrations/` — incremental migrations (task metric, soft delete, `deleted_at` policy)
+- `__tests__/` — Vitest suites mirroring app structure
+- `docs/`, `specs/` — product notes
+- `.claude/skills/update-doc/` — this snapshot workflow
 
 ## 4. Architecture & data flow
 
-Request flow is browser -> `src/proxy.ts` -> `src/lib/supabase/middleware.ts::updateSession` -> page or route handler.
+Request flow: browser → `src/proxy.ts` → `src/lib/supabase/middleware.ts::updateSession` → page or route handler. Auth is Supabase OTP (`/auth/login` + `/auth/callback`); protected routes are gated at the proxy; authenticated users are redirected away from `/` and `/auth/login`. Login/callback choose between onboarding and dashboard by counting only non-deleted challenges.
 
-Auth uses Supabase OTP (`/auth/login` and `/auth/callback`). Protected app routes are gated in the proxy and authenticated users are redirected away from `/` and `/auth/login`. Login/callback now decide between onboarding and dashboard by counting only non-deleted challenges.
+Reads go through server helpers in `src/lib/challenge-data.ts`:
+- `getDashboardData()` picks active-challenge task-of-the-day (by date, then first incomplete, then last task) and the latest mood entry for that task.
+- `getChallengeDetailData()` loads challenge + all tasks and derives progress server-side; treats status `completed` OR completed-tasks ≥ `duration_days` as complete.
+- `getHistoryData()` loads non-deleted challenges with completion counts and derives progress before render.
 
-Core challenge flow:
-1. User creates a challenge from onboarding or `/challenge/discover`.
-2. AI endpoints in `src/app/api/ai/*` call prompt helpers in `src/lib/ai.ts`.
-3. `POST /api/challenges` creates the `challenges` row and its `daily_tasks`, sanitizing task payloads before insert.
-4. Dashboard loads active-challenge data through `src/lib/challenge-data.ts::getDashboardData()`.
-5. Challenge detail pages load the full persisted task list through `src/lib/challenge-data.ts::getChallengeDetailData()`.
-6. History loads persisted challenge summaries through `src/lib/challenge-data.ts::getHistoryData()` and renders delete interactions through `src/app/(app)/history/HistoryList.tsx`.
-7. `PATCH /api/tasks/[id]` persists task completion and revalidates dashboard/challenge pages.
-8. `POST /api/mood-entries` upserts the latest mood entry for the current task and revalidates related pages.
-9. `DELETE /api/challenges/[id]` soft-deletes a challenge by setting `deleted_at` and revalidates dashboard/history/detail/summary routes.
+Writes are route handlers that verify ownership by joining through `challenges!inner (user_id)` and filtering `deleted_at is null`:
+- `POST /api/challenges` validates contiguous task days 1..N and sanitizes each task before insert; if the task insert fails and service-role is available, the challenge row is hard-deleted, otherwise soft-deleted (`src/app/api/challenges/route.ts`).
+- `PATCH /api/tasks/[id]` persists task completion; when all tasks done, challenge `status` flips to `completed` (`src/app/api/tasks/[id]/route.ts:16`).
+- `POST /api/mood-entries` upserts one mood row per `(user_id, task_id)` pair.
+- `POST /api/reflections` guards against duplicate reflections (idempotent on existing row) before calling Groq for the AI insight ([src/app/api/reflections/route.ts:55](src/app/api/reflections/route.ts#L55)).
+- `DELETE /api/challenges/[id]` sets `deleted_at` and revalidates dashboard/history/detail/summary.
+- `GET /api/cron/send-reminders` (service-role, bearer-guarded) emails users with today's incomplete tasks on active non-deleted challenges.
 
-`getDashboardData()` finds the user's active challenge, loads all its tasks, picks today's task by `date` with fallback to the first incomplete task and then the last task, calculates progress, and fetches the latest mood entry for the selected task.
+Dates go through `src/lib/app-date.ts` (`APP_TIME_ZONE`, default `Europe/Warsaw`) — never raw server-local dates. URLs in tasks are restricted via `src/lib/resource-url.ts` to deterministic search URLs (`youtube.com/results`, `google.com/search`) instead of arbitrary external links.
 
-`getChallengeDetailData()` fetches a user-owned challenge plus all of its tasks, calculates progress server-side, and treats a challenge as complete either when the DB status is `completed` or when completed tasks reach `duration_days`.
+## 5. User journeys (concrete)
 
-`getHistoryData()` loads all user-owned, non-deleted challenges, fetches completion counts from `daily_tasks`, and derives progress server-side before the client list adds optimistic hiding for delete actions.
+1. **Create challenge (discovery)**
+   - `/challenge/discover` → user enters goal + duration ([src/app/(app)/challenge/discover/page.tsx](src/app/(app)/challenge/discover/page.tsx))
+   - `POST /api/ai/generate-discovery-plan` → `generateDiscoveryPlan()` in [src/lib/ai.ts](src/lib/ai.ts)
+   - User edits tasks (optional) → `POST /api/challenges` inserts `challenges` + `daily_tasks` with contiguity check ([src/app/api/challenges/route.ts:19-36](src/app/api/challenges/route.ts#L19-L36))
+   - Redirect to challenge detail
 
-Date-sensitive flows share `src/lib/app-date.ts`. Challenge creation and reminder cron both derive "today" from the app time zone (`APP_TIME_ZONE`, default `Europe/Warsaw`) instead of relying on raw server-local dates.
+2. **Daily task-of-the-day**
+   - `/dashboard` → `getDashboardData()` ([src/lib/challenge-data.ts](src/lib/challenge-data.ts)) picks today's task using `getTodayDateString()` in Warsaw TZ
+   - Renders `TaskCheckbox` + `MoodCheckIn`
 
-Challenge visibility is now soft-delete aware across reads and mutations: challenge queries filter `deleted_at is null`, task/mood lookups join through non-deleted parent challenges, reminder cron ignores deleted or non-active challenges, and new RLS policies in `supabase/migrations/20260416_add_deleted_at_to_challenges.sql` enforce the same invariant at the DB layer.
+3. **Complete a task**
+   - `PATCH /api/tasks/[id]` updates `daily_tasks.completed`; if remaining tasks all done, update challenge status to `completed`; revalidates dashboard + challenge detail ([src/app/api/tasks/[id]/route.ts:16](src/app/api/tasks/[id]/route.ts#L16))
 
-Challenge creation also sanitizes `resource_url` through `src/lib/resource-url.ts`, intentionally allowing only deterministic search URLs (`youtube.com/results`, `google.com/search`) instead of arbitrary external links.
+4. **Mood check-in**
+   - `POST /api/mood-entries` upserts the single `(user_id, task_id)` row ([src/app/api/mood-entries/route.ts](src/app/api/mood-entries/route.ts))
 
-Cron flow: `GET /api/cron/send-reminders` uses the service role key, finds today's incomplete tasks for active non-deleted challenges, checks `notification_preferences`, fetches user emails through Supabase admin, and sends Resend reminders.
+5. **Soft-delete a challenge**
+   - `DELETE /api/challenges/[id]` sets `deleted_at`, hidden everywhere: dashboard/detail/history reads, cron, onboarding routing, and RLS on child tables ([src/app/api/challenges/[id]/route.ts](src/app/api/challenges/[id]/route.ts))
+   - History uses optimistic removal in [src/app/(app)/history/HistoryList.tsx](src/app/(app)/history/HistoryList.tsx)
 
-Account deletion flow: `DELETE /api/account` now uses an admin Supabase client for both child-row cleanup and auth-user deletion, rather than mixing user-scoped deletes with admin auth deletion.
+6. **Daily reminder cron**
+   - Vercel cron fires `/api/cron/send-reminders` daily (see `vercel.json`) → service-role query of today's incomplete tasks on active non-deleted challenges → check `notification_preferences.email_enabled` → Resend email ([src/app/api/cron/send-reminders/route.ts](src/app/api/cron/send-reminders/route.ts))
 
-## 5. Conventions & patterns
+## 6. Conventions & patterns
 
-- UI and prompt copy are in Polish; code identifiers stay in English
-- App Router route groups separate authenticated shell pages under `src/app/(app)/`
-- Data reads and writes generally go through route handlers or server helpers in `src/app/api/*` and `src/lib/*`
-- Supabase ownership checks often join back through `challenges!inner (... user_id ...)` before mutating task or mood rows
-- Soft delete is the current convention for challenges: app code and RLS should treat `deleted_at is null` as the visibility boundary
-- AI output is parsed and validated in `src/lib/ai.ts`; raw model output is not trusted
-- Challenge/task payloads are explicitly sanitized before DB writes instead of trusting client-edited plan JSON
-- Imports use the `@/` alias
-- Tests mirror app structure under `__tests__/`
+- UI/prompt copy Polish; code identifiers English.
+- Authenticated pages live under `src/app/(app)/` route group.
+- Data access goes through route handlers (`src/app/api/*`) or server helpers (`src/lib/challenge-data.ts`) — not raw client queries.
+- Ownership checks on mutation use `challenges!inner (... user_id ...)` joins, plus `deleted_at is null` filter.
+- **Soft delete is the visibility convention for challenges.** App code AND RLS policies treat `deleted_at is null` as the boundary.
+- AI output in `src/lib/ai.ts` is parsed + validated; raw model output is never trusted.
+- Task payloads for `POST /api/challenges` are sanitized and contiguity-checked (days 1..N exactly once) before insert.
+- Resource URLs are restricted to known search endpoints via `sanitizeResourceUrl()` — deliberate, to avoid arbitrary external links.
+- Imports use the `@/` alias.
+- Tests mirror the source tree under `__tests__/`.
 
-## 6. Current focus
+## 7. Glossary
 
-- Branch: `fix-real-dashboard-data`
-- HEAD: `a732cf0`
-- Working tree is dirty with active feature work around challenge soft delete, history UX, deletion tests, and Supabase policy updates
-- Uncommitted files currently indicate:
-  - new delete endpoint and dialog: `src/app/api/challenges/[id]/route.ts`, `src/components/DeleteChallengeDialog.tsx`
-  - history split into server page + client list with optimistic removal: `src/app/(app)/history/page.tsx`, `src/app/(app)/history/HistoryList.tsx`
-  - soft-delete propagation through challenge/task/mood/login/callback/cron/data helpers and `Challenge.deleted_at`
-  - migration for `deleted_at` and RLS/index updates: `supabase/migrations/20260416_add_deleted_at_to_challenges.sql`
-  - targeted new tests for challenge create/delete and history list behavior
+- **Task-of-the-day** — the single daily_task shown on the dashboard, picked by date → first incomplete → last.
+- **Soft delete** — setting `deleted_at` on a challenge; the row stays but is hidden from reads, RLS, and cron.
+- **Reflection** — end-of-challenge user self-report (feelings, likes, dislikes) that triggers a Groq-generated insight.
+- **Discovery plan** — AI-generated first draft of daily tasks produced from the user's goal description.
+- **App time zone** — `Europe/Warsaw` (override via `APP_TIME_ZONE`); all date-boundary logic derives "today" here.
 
-## 7. Recent changes (last 7 days)
+## 8. Current focus
+
+- Branch: `main`
+- HEAD: `27e7ea8`
+- Working tree: clean
+- Status: the large soft-delete + real-data feature set has landed on `main`; `/update-doc` skill just got a v3 overhaul. No active in-flight feature branch visible locally.
+
+## 9. Recent changes (since last snapshot 2026-04-16 @ a732cf0)
 
 ### HIGH impact
-- `a732cf0` - Refactored challenge status handling and data fetching for history/detail pages; history now uses real server-loaded data and the summary page was simplified into a temporary disabled state instead of pretending reflection/AI persistence exists.
-- `0b30dd2` - Replaced the challenge detail page's mock/local behavior with real server-loaded challenge data via `getChallengeDetailData()`, including real progress and persisted task completion state.
-- `6137fa2` - Replaced mocked dashboard behavior with real challenge/task loading via `src/lib/challenge-data.ts`, added `POST /api/mood-entries`, added `PATCH /api/tasks/[id]`, and wired `MoodCheckIn` and `TaskCheckbox` to persist through the API.
+- `bdb7afe` — Replaced mock data on history, settings, and summary pages with live Supabase reads. WHY IT MATTERS: user-visible state is now actually persisted across sessions end-to-end.
+- `523e9de` — Implemented soft delete for challenges (new `DELETE /api/challenges/[id]`, `deleted_at` column, filtered queries). WHY IT MATTERS: users can archive challenges without data loss, and unlocks the real history view.
+- `47737fc` — Strengthened dashboard data handling and added tests for `getDashboardData()`. WHY IT MATTERS: the daily task selection (date → first-incomplete → last) is the most-used path and now has regression coverage.
+- `796059b` — `POST /api/reflections` now checks for an existing reflection before the AI call, and logs failed challenge-status updates. WHY IT MATTERS: prevents duplicate reflection rows on double-click and prevents silent "stuck active" states after completion.
 
 ### MEDIUM impact
-- `ea7acf2` - Updated challenge navigation to use the real challenge ID after creation and refreshed relevant paths.
-- `005c118` - Added `src/lib/app-date.ts` and refactored challenge creation plus reminder cron to use a shared app-level date source and date arithmetic.
-- `561ae2f`, `d00f245`, `1266f31` - Shifted key CTAs toward `/challenge/discover`, added task payload sanitization in `POST /api/challenges`, and tightened validation so malformed or empty edited tasks are rejected before insert.
-- `8b2d36b`, `3a7eb20` - Strengthened AI prompts so generated tasks are concrete and measurable while narrowing health/safety warnings to actual injury or rehab topics.
+- `1fe3878` — Merge resolving soft-delete work against the reflections idempotency fix. WHY IT MATTERS: kept both safety nets (idempotency + soft-delete filters) live simultaneously after the two parallel streams merged.
+- `27e7ea8`, `6cb6fbb` — Rewrote `/update-doc` skill to v3: parallel sub-agents, mandatory WHY clauses, volume budgets, enforced repo-relative paths and verified HTTP verbs. WHY IT MATTERS: future snapshots should stay focused and trustworthy instead of drifting into bloat.
+- `232c4b6`, `b040858` — Promoted the Curiosity wordmark to a top-of-page link on `/auth/login`. WHY IT MATTERS: logged-out visitors can return to the landing page, matching site-wide header behavior.
 
 ### LOW impact
-- `90a9669` - Removed unused imports/exports and trimmed some UI component surface area without intended runtime behavior changes.
-- `060fc2b` - Simplified `parseDateString()` internals in `src/lib/app-date.ts` without intended behavior change.
-- `c272b7b`, `e52924b`, `c3a71f6`, `6bf1ae7`, `2d9bf7e`, `2cff7ec` - Added and iterated on the `/update-doc` snapshot workflow and project-state snapshot.
-- `90f27a4`, `cf16a16`, `cc13993`, `19bdb9f`, `ae2807a`, `520a058`, `657ea77` - Navbar, login, and challenge-creation UX polish plus authenticated redirect cleanup.
+- `b8e6216` — Bumped `@supabase/supabase-js` to `2.103.3`. WHY IT MATTERS: routine security/compat refresh; no API changes observed.
 
-## 8. Open TODOs / known issues
+## 10. Open TODOs / known issues
 
 ### Critical
-- `src/app/(app)/challenge/[id]/summary/page.tsx:20` - End-of-challenge summary is temporarily disabled; reflection save, AI insight generation, and continuation flow are not available in the current UI.
+- [src/app/(app)/challenge/[id]/summary/page.tsx:20](src/app/(app)/challenge/[id]/summary/page.tsx#L20) — End-of-challenge summary page UI is still a placeholder ("Podsumowanie chwilowo wylaczone") with two CTA buttons; it does not invoke `POST /api/reflections`. Users finishing a challenge get no summary/insight view even though the reflection API exists. Why risk: the post-challenge moment is a product-critical finale and currently dead-ends.
 
 ### Tech debt
-- `src/app/(app)/settings/page.tsx:39` - Notification preferences still have a `TODO` and are not saved to Supabase.
-- `README.md:3` - README is still mostly the default Next.js scaffold and does not describe Curiosity setup or architecture.
-- Targeted Vitest files now exist for challenge create/delete and history delete UX, but `npm run test:run -- __tests__/api/challenges-create.test.ts __tests__/api/challenges-delete.test.ts __tests__/components/history-list.test.tsx` timed out while starting workers in this environment, so those tests are not yet verified end-to-end.
-- Some shell output still shows mojibake-looking Polish strings; file encoding/rendering should be sanity-checked separately (inferred from terminal output, not fully verified in-app).
+- [src/app/(app)/settings/page.tsx:102](src/app/(app)/settings/page.tsx#L102) — `.catch(() => ({}))` silently swallows error-response JSON parse failures on account deletion; non-fatal but can hide unexpected API response shapes.
+- [README.md:3](README.md#L3) — README is still the default Next.js scaffold and does not describe Curiosity setup, architecture, or envs. Cost: new contributor onboarding friction.
+- Targeted Vitest files exist for challenge create/delete and history list UX, but prior run reported worker-start timeouts in at least one environment (inferred from prior snapshot, not fully verified at current HEAD).
 
 ### Nice-to-have
-- Confirm whether production data exactly matches `supabase/schema.sql` plus migrations, especially the new `deleted_at` migration and policy updates (inferred, not fully verified).
-- Add or stabilize targeted tests around soft delete plus history/detail/dashboard flows once the Vitest worker startup issue is resolved.
+- Confirm production DB matches `supabase/schema.sql` + all migrations (especially `20260416_add_deleted_at_to_challenges.sql`) (inferred, not fully verified).
+- Decide whether `/challenge/new` should be removed now that `/challenge/discover` is the canonical start path.
 
-## 9. Gotchas & decisions
+## 11. Gotchas & decisions
 
-- This repo uses Next.js `16.2.3`, and `AGENTS.md` explicitly warns that conventions differ from typical Next.js expectations.
-- The request gate lives in `src/proxy.ts`, not `middleware.ts`. Do not reintroduce legacy middleware structure.
-- Dynamic route pages and handlers in this Next version may receive `params` as a promise. Both `src/app/(app)/challenge/[id]/page.tsx` and `src/app/api/challenges/[id]/route.ts` follow that pattern.
-- `src/lib/app-date.ts` defines the app's canonical date behavior. Use `getTodayDateString()` and `addDaysToDateString()` for challenge/task/reminder dates instead of ad hoc `Date` math.
-- Dashboard task selection is date-first, then first incomplete task, then final task. This matters once users miss days or complete work out of order.
-- Mood writes are implemented as "update latest existing row for this task, otherwise insert", effectively treating mood as one editable latest entry per task in the UI flow.
-- Task and mood mutation APIs verify ownership by joining through the parent challenge's `user_id`, and now also require the parent challenge to be non-deleted.
-- Challenge creation still lacks a true DB transaction. If task insert fails, the handler now prefers an admin-client hard delete when service-role config exists and otherwise falls back to soft delete.
-- Soft deleting a challenge hides it from onboarding routing, dashboard/detail/history reads, cron reminders, and RLS-backed child-table access; deleting is currently a hide/archive action rather than full cascade data removal.
-- The summary page no longer pretends reflection or AI save works; it explicitly routes users to either start a new challenge or go to history.
-- The app's main "start challenge" flow appears to be moving from `/challenge/new` toward `/challenge/discover`, but both routes still exist and likely need product-level cleanup.
+- **Next.js 16.2.3 is not vanilla Next.** `AGENTS.md` warns: read `node_modules/next/dist/docs/` before coding anything new. Why: several APIs and conventions diverge from training-data defaults.
+- **Request gate lives in `src/proxy.ts`, not `middleware.ts`.** Do not reintroduce legacy middleware structure. The `export const config.matcher` in the proxy controls which paths pass through.
+- **Dynamic route params are Promises in Next 16.** Both page and route handlers `await context.params` — see [src/app/api/tasks/[id]/route.ts:18](src/app/api/tasks/[id]/route.ts#L18).
+- **All date logic routes through `src/lib/app-date.ts`.** Use `getTodayDateString()` / `addDaysToDateString()` — never raw `new Date()` math. Why: Warsaw-TZ anchoring is what keeps task-of-the-day, cron, and challenge `end_date` consistent.
+- **Dashboard task-of-the-day order is date → first incomplete → last.** Why: users who miss a day or complete out of order still get a sensible default.
+- **Mood is one editable entry per task.** `POST /api/mood-entries` updates existing rather than appending.
+- **Mutation APIs require non-deleted parent challenge.** Task/mood writes join through `challenges!inner` with `deleted_at is null`; RLS enforces the same.
+- **No DB transaction on challenge creation.** If task insert fails, the handler hard-deletes (if service-role configured) or soft-deletes the challenge row. Why: avoid orphaned challenges with zero tasks.
+- **Soft delete is hide/archive, not cascade.** `daily_tasks` and `mood_entries` rows remain; they're just unreachable via app code + RLS.
+- **Reflection endpoint is idempotent.** `POST /api/reflections` checks for an existing reflection before the Groq call. Why: protects against double-submit and wasted AI spend.
+- **Cron uses service-role and a bearer check.** `GET /api/cron/send-reminders` verifies `CRON_SECRET` before touching the admin client. Do not expose it publicly.
 
-## 10. How to run & test
+## 12. How to run & test
 
 ```bash
-npm run dev
-npm run dev:secure
+npm run dev         # local dev
+npm run dev:secure  # dev with Bitwarden-sourced env
 npm run build
 npm run start
 npm run lint
-npm run test
-npm run test:run
+npm run test        # vitest watch
+npm run test:run    # vitest one-shot
 ```
 
-Required env from `.env.local.example`:
+Required env (`.env.local.example`):
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `GROQ_API_KEY`
@@ -157,21 +172,21 @@ Required env from `.env.local.example`:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `CRON_SECRET`
 
-Database setup (based on repo files): apply `supabase/schema.sql`, then run migrations from `supabase/migrations/` in order.
+DB setup: apply `supabase/schema.sql`, then all files in `supabase/migrations/` in order.
 
-## 11. Next steps
+## 13. Next steps
 
-1. Finish or replace the disabled summary flow in `src/app/(app)/challenge/[id]/summary/page.tsx` with real reflection persistence and any intended AI follow-up.
-2. Commit and browser-verify the soft-delete/history work, including `DELETE /api/challenges/[id]`, optimistic hiding in history, and route revalidation behavior.
-3. Apply and validate `supabase/migrations/20260416_add_deleted_at_to_challenges.sql` in the target environments.
-4. Connect `src/app/(app)/settings/page.tsx` to real notification preference persistence.
-5. Investigate and fix the Vitest worker-start timeout so the new API/component tests can run reliably.
-6. Replace the scaffold `README.md` with real product/setup documentation.
+1. Wire `src/app/(app)/challenge/[id]/summary/page.tsx` to call `POST /api/reflections` and render the returned AI insight; unblock the completion flow.
+2. Confirm the `20260416_add_deleted_at_to_challenges.sql` migration is applied in every active Supabase environment (dev/staging/prod).
+3. Decide and execute: keep `/challenge/new` or redirect it to `/challenge/discover`.
+4. Replace the scaffold `README.md` with real product/setup documentation.
+5. Re-run the target Vitest files (`challenges-create`, `challenges-delete`, `history-list`) on the current HEAD to confirm the earlier worker-start timeout was environment-specific.
+6. Connect notification toggle in `src/app/(app)/settings/page.tsx` to `/api/notification-preferences` if not already wired end-to-end (inferred from filenames, not fully verified).
 
-## 12. Unknowns / needs investigation
+## 14. Unknowns / needs investigation
 
-- Whether the current uncommitted soft-delete changes have already been fully validated in the browser is not verified from repo state alone.
-- Whether the new `deleted_at` migration and RLS policy changes have been applied to every active database environment is not verified.
-- Why Vitest worker startup timed out for the three targeted test files in this environment is unclear; this may be config-, environment-, or runner-related.
-- Whether the summary page is intentionally paused as a product decision or only a temporary implementation gap is not fully verified.
-- Whether any older AI endpoints (`generate-plan`, `review-plan`, `discover-interests`) are now partially legacy versus still used in production flows is inferred, not fully verified.
+- Whether `/api/reflections` is currently reachable from the app UI at all. The endpoint exists and is idempotent, but the summary page at [src/app/(app)/challenge/[id]/summary/page.tsx:20](src/app/(app)/challenge/[id]/summary/page.tsx#L20) is a placeholder. If another component invokes the endpoint, it's not obvious. (Needs a grep of `/api/reflections` callers to confirm.)
+- Whether `/api/notification-preferences` is fully wired into the settings UI (endpoint file exists; UI-side integration not verified in this snapshot).
+- Whether production DB schema matches repo migrations exactly, especially `deleted_at` policy.
+- Whether the Vitest worker-start timeout noted in the 2026-04-16 snapshot still reproduces, or was environmental.
+- Whether legacy AI endpoints (`generate-plan`, `review-plan`, `discover-interests`) are still used or now dead code — `generate-discovery-plan` is confirmed active (migrated from v2).
