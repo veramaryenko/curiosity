@@ -15,8 +15,8 @@ export interface ArticleResource {
 }
 
 export interface Resources {
-  video?: VideoResource | null;
-  article?: ArticleResource | null;
+  video: VideoResource | null;
+  article: ArticleResource | null;
 }
 
 export type MoodScore = 1 | 2 | 3 | 4 | 5;

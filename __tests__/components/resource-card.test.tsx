@@ -31,6 +31,7 @@ describe("ResourceCard", () => {
             thumbnail: null,
             published_at: null,
           },
+          article: null,
         }}
       />
     );
@@ -52,6 +53,7 @@ describe("ResourceCard", () => {
             thumbnail: null,
             published_at: null,
           },
+          article: null,
         }}
       />
     );
@@ -63,6 +65,7 @@ describe("ResourceCard", () => {
     render(
       <ResourceCard
         resources={{
+          video: null,
           article: {
             url: "https://medium.com/some-article",
             title: "Jak zacząć rysować",
