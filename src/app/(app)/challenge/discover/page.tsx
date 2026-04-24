@@ -67,7 +67,11 @@ export default function DiscoverPage() {
           duration_days: days,
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(body.error ?? "Nie udało się wygenerować planu. Spróbuj jeszcze raz.");
+        return false;
+      }
       const data = (await res.json()) as {
         category: string;
         tasks: DiscoveryPlanTask[];

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateDiscoveryPlan } from "@/lib/ai";
+import { GeminiUnavailableError } from "@/lib/gemini";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -49,6 +50,12 @@ export async function POST(request: Request) {
     return NextResponse.json(plan);
   } catch (err) {
     console.error("POST /api/ai/generate-discovery-plan failed:", err);
+    if (err instanceof GeminiUnavailableError) {
+      return NextResponse.json(
+        { error: "Spróbuj za chwilę — AI jest teraz bardzo obciążone." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { error: "Failed to generate plan" },
       { status: 500 }
