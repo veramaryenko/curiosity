@@ -15,36 +15,93 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import type { Resources } from "@/types";
 
 type PlanMode = "ai" | "manual" | null;
 
 interface TaskDraft {
   day: number;
   description: string;
-  resource_url: string;
+  video_url: string;
+  video_title: string;
+  video_channel: string;
+  article_url: string;
+  article_title: string;
+  article_source: string;
+  showVideo: boolean;
+  showArticle: boolean;
+}
+
+function draftToResources(task: TaskDraft): Resources | null {
+  let video = null;
+  let article = null;
+
+  if (task.showVideo && task.video_url.trim() && task.video_title.trim() && task.video_channel.trim()) {
+    video = {
+      url: task.video_url.trim(),
+      title: task.video_title.trim(),
+      channel: task.video_channel.trim(),
+      thumbnail: null,
+      published_at: null,
+    };
+  }
+
+  if (task.showArticle && task.article_url.trim() && task.article_title.trim() && task.article_source.trim()) {
+    article = {
+      url: task.article_url.trim(),
+      title: task.article_title.trim(),
+      source: task.article_source.trim(),
+    };
+  }
+
+  if (!video && !article) return null;
+  return { video, article };
+}
+
+function emptyDraft(day: number): TaskDraft {
+  return {
+    day,
+    description: "",
+    video_url: "",
+    video_title: "",
+    video_channel: "",
+    article_url: "",
+    article_title: "",
+    article_source: "",
+    showVideo: false,
+    showArticle: false,
+  };
+}
+
+function resourcesToDraft(resources: Resources | null): Partial<TaskDraft> {
+  if (!resources) return {};
+  return {
+    showVideo: !!resources.video,
+    video_url: resources.video?.url ?? "",
+    video_title: resources.video?.title ?? "",
+    video_channel: resources.video?.channel ?? "",
+    showArticle: !!resources.article,
+    article_url: resources.article?.url ?? "",
+    article_title: resources.article?.title ?? "",
+    article_source: resources.article?.source ?? "",
+  };
 }
 
 export default function NewChallengePage() {
   const router = useRouter();
   const [step, setStep] = useState<"goal" | "plan" | "review">("goal");
 
-  // Goal step
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [days, setDays] = useState(14);
 
-  // Plan step
   const [planMode, setPlanMode] = useState<PlanMode>(null);
   const [tasks, setTasks] = useState<TaskDraft[]>([]);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
 
   function initEmptyTasks(numDays: number) {
-    return Array.from({ length: numDays }, (_, i) => ({
-      day: i + 1,
-      description: "",
-      resource_url: "",
-    }));
+    return Array.from({ length: numDays }, (_, i) => emptyDraft(i + 1));
   }
 
   async function generateWithAI() {
@@ -55,12 +112,18 @@ export default function NewChallengePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, description, duration_days: days }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(body.error ?? "Nie udało się wygenerować planu. Spróbuj ponownie albo napisz plan ręcznie.");
+        setPlanMode(null);
+        return;
+      }
       const { tasks: generated } = await res.json();
       setTasks(
-        generated.map((t: { day: number; description: string; resource_url: string | null }) => ({
-          ...t,
-          resource_url: t.resource_url ?? "",
+        generated.map((t: { day: number; description: string; resources: Resources | null }) => ({
+          ...emptyDraft(t.day),
+          description: t.description,
+          ...resourcesToDraft(t.resources),
         }))
       );
       setStep("review");
@@ -80,7 +143,7 @@ export default function NewChallengePage() {
     setStep("review");
   }
 
-  function updateTask(index: number, field: keyof TaskDraft, value: string) {
+  function updateTask(index: number, field: keyof TaskDraft, value: string | boolean) {
     setTasks((prev) => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
@@ -106,7 +169,7 @@ export default function NewChallengePage() {
           tasks: tasks.map((t) => ({
             day: t.day,
             description: t.description,
-            resource_url: t.resource_url.trim() || null,
+            resources: draftToResources(t),
           })),
         }),
       });
@@ -140,12 +203,17 @@ export default function NewChallengePage() {
           })),
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(body.error ?? "Nie udało się sprawdzić planu. Spróbuj ponownie.");
+        return;
+      }
       const { tasks: reviewed } = await res.json();
-      setTasks(
-        reviewed.map((t: { day: number; description: string; resource_url: string | null }) => ({
-          ...t,
-          resource_url: t.resource_url ?? "",
+      setTasks((prev) =>
+        reviewed.map((t: { day: number; description: string; resources: Resources | null }, i: number) => ({
+          ...(prev[i] ?? emptyDraft(t.day)),
+          description: t.description,
+          ...resourcesToDraft(t.resources),
         }))
       );
       toast.success("AI poprawiło Twój plan!");
@@ -167,7 +235,6 @@ export default function NewChallengePage() {
         </p>
       </div>
 
-      {/* Step 1: Goal */}
       {step === "goal" && (
         <Card>
           <CardHeader>
@@ -226,7 +293,6 @@ export default function NewChallengePage() {
         </Card>
       )}
 
-      {/* Step 2: Choose plan mode */}
       {step === "plan" && (
         <div className="space-y-4">
           <Card
@@ -290,7 +356,6 @@ export default function NewChallengePage() {
         </div>
       )}
 
-      {/* Step 3: Review & edit plan */}
       {step === "review" && (
         <div className="space-y-4">
           {planMode === "manual" && (
@@ -320,14 +385,96 @@ export default function NewChallengePage() {
                     rows={2}
                     className="resize-none"
                   />
-                  <Input
-                    value={task.resource_url}
-                    onChange={(e) =>
-                      updateTask(i, "resource_url", e.target.value)
-                    }
-                    placeholder="Link do materiału (opcjonalne)"
-                    type="url"
-                  />
+
+                  {!task.showVideo ? (
+                    <button
+                      type="button"
+                      onClick={() => updateTask(i, "showVideo", true)}
+                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      + Dodaj film
+                    </button>
+                  ) : (
+                    <div className="space-y-2 rounded-lg border border-border p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium">Film (opcjonalny)</p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTasks((prev) => {
+                              const updated = [...prev];
+                              updated[i] = { ...updated[i], showVideo: false, video_url: "", video_title: "", video_channel: "" };
+                              return updated;
+                            })
+                          }
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          usuń
+                        </button>
+                      </div>
+                      <Input
+                        value={task.video_url}
+                        onChange={(e) => updateTask(i, "video_url", e.target.value)}
+                        placeholder="URL YouTube (https://youtube.com/watch?v=...)"
+                        type="url"
+                      />
+                      <Input
+                        value={task.video_title}
+                        onChange={(e) => updateTask(i, "video_title", e.target.value)}
+                        placeholder="Tytuł filmu"
+                      />
+                      <Input
+                        value={task.video_channel}
+                        onChange={(e) => updateTask(i, "video_channel", e.target.value)}
+                        placeholder="Nazwa kanału"
+                      />
+                    </div>
+                  )}
+
+                  {!task.showArticle ? (
+                    <button
+                      type="button"
+                      onClick={() => updateTask(i, "showArticle", true)}
+                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      + Dodaj artykuł
+                    </button>
+                  ) : (
+                    <div className="space-y-2 rounded-lg border border-border p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium">Artykuł (opcjonalny)</p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTasks((prev) => {
+                              const updated = [...prev];
+                              updated[i] = { ...updated[i], showArticle: false, article_url: "", article_title: "", article_source: "" };
+                              return updated;
+                            })
+                          }
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          usuń
+                        </button>
+                      </div>
+                      <Input
+                        value={task.article_url}
+                        onChange={(e) => updateTask(i, "article_url", e.target.value)}
+                        placeholder="URL artykułu (https://...)"
+                        type="url"
+                      />
+                      <Input
+                        value={task.article_title}
+                        onChange={(e) => updateTask(i, "article_title", e.target.value)}
+                        placeholder="Tytuł artykułu"
+                      />
+                      <Input
+                        value={task.article_source}
+                        onChange={(e) => updateTask(i, "article_source", e.target.value)}
+                        placeholder="Źródło (np. medium.com)"
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}

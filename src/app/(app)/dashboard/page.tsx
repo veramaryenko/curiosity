@@ -11,6 +11,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { MoodCheckIn } from "@/components/mood-check-in";
 import { TaskCheckbox } from "@/components/task-checkbox";
+import { ResourceCard } from "@/components/resource-card";
 import {
   getDashboardData,
   type DashboardChallengeData,
@@ -61,16 +62,7 @@ function ChallengeCard({ item }: { item: DashboardChallengeData }) {
 
           <TaskCheckbox taskId={task.id} completed={task.completed} />
 
-          {task.resource_url && (
-            <a
-              href={task.resource_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block text-sm text-primary underline underline-offset-4"
-            >
-              Pomocny material
-            </a>
-          )}
+          <ResourceCard resources={task.resources} />
         </div>
 
         <MoodCheckIn taskId={task.id} initialMoodEntry={moodEntry} />
