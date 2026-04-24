@@ -228,7 +228,7 @@ Odpowiedz TYLKO jako JSON (bez markdown, bez wstępu):
   ]
 }`;
 
-  const { text } = await chatWithGrounding(prompt, 8192);
+  const { text } = await chatWithGrounding(prompt, 4096);
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("AI did not return valid JSON");
